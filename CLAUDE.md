@@ -63,6 +63,11 @@ embedded/build.sh flash monitor   # anything else is passed to idf.py
   `embedded/build.sh --breadboard` builds the latter in `build-breadboard/` from
   `sdkconfig.breadboard`. Display inversion and row/column offsets are Kconfig options, since
   ST7789V panels vary.
+- **Lines meet expander pins only in `kat_line_map()`** (`board_pins.h`), which supports MCP23017
+  and TCA9555. **Never map a line to an MCP23017's GPA7 or GPB7:** they're output-only on current
+  datasheets, which leaves 14 lines per chip. `lines_init()` refuses a map that breaks this, reuses a
+  pin, or names a missing expander. Unmapped lines read as never connected. The breadboard's
+  stage 1 maps only the two RJ45 jacks (18 lines on 2 × MCP23017).
 - **Pins are placeholders.** `embedded/main/board_pins.h` holds the pin map until KATOO-1's
   generated `pins.h` replaces it (every value is marked TODO).
 - **Wi-Fi:** credentials go in `embedded/sdkconfig.secrets` (gitignored; copy
