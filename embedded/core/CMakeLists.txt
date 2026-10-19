@@ -25,11 +25,12 @@ add_library(katooni_core STATIC
   src/cable.c
   src/session.c
   src/simcable.c
+  src/json.c
 )
 target_include_directories(katooni_core PUBLIC include)
 
 enable_testing()
-foreach(t lines classify emarker resistance session)
+foreach(t lines classify emarker resistance session json)
   add_executable(test_${t} tests/test_${t}.c)
   target_link_libraries(test_${t} katooni_core)
   add_test(NAME ${t} COMMAND test_${t})

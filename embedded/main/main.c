@@ -18,6 +18,7 @@
 #include "prov.h"
 #include "sdkconfig.h"
 #include "tester.h"
+#include "web.h"
 
 static const char *TAG = "katooni";
 static prov_t s_prov;   /* lives as long as the Fleet client */
@@ -66,10 +67,12 @@ void app_main(void)
     if (fusb302_init() != ESP_OK) ESP_LOGW(TAG, "FUSB302B not answering: no e-marker reads");
     if (loadtest_init() != ESP_OK) ESP_LOGW(TAG, "INA226s not answering: no resistance check");
     app_state_load();
-    if (net_start(provisioned ? s_prov.wifi_ssid : NULL, provisioned ? s_prov.wifi_password : NULL) != ESP_OK)
+    if (net_start(provisioned ? s_prov.wifi_ssid : NULL, provisioned ? s_prov.wifi_password : NULL) != ESP_OK) {
         ESP_LOGW(TAG, "no network");
-    else if (fleet)
-        fleet_start(&s_prov);
+    } else {
+        if (web_start() != ESP_OK) ESP_LOGW(TAG, "no web page");
+        if (fleet) fleet_start(&s_prov);
+    }
 
     vTaskDelay(pdMS_TO_TICKS(1500));   /* let the splash be seen */
     tester_start(hw_ok);

@@ -258,6 +258,12 @@ static void test_letters_and_colours(void)
     CHECK(kat_bag_colour(0) != kat_bag_colour(1));
     CHECK(kat_bag_colour(-5) == kat_bag_colour(0));
     CHECK_STR(kat_bag_colour(2)->name, "green");
+    /* Red means faulty on the screen and the page, so no bag may be red. */
+    for (int i = 0; i < KAT_PALETTE_SIZE; i++) {
+        uint32_t c = kat_bag_colour(i)->rgb;
+        unsigned r = (c >> 16) & 0xFF, g = (c >> 8) & 0xFF, b = c & 0xFF;
+        CHECK(!(r > 0xB0 && g < 0x60 && b < 0x60));
+    }
     CHECK_INT(kat_rgb565(0xFFFFFF), 0xFFFF);
     CHECK_INT(kat_rgb565(0xFF0000), 0xF800);
     CHECK_INT(kat_rgb565(0x00FF00), 0x07E0);

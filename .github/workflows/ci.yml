@@ -33,6 +33,11 @@ jobs:
           cmake -S embedded/core -B build/core-clang -DCMAKE_C_COMPILER=clang
           cmake --build build/core-clang
           ctest --test-dir build/core-clang --output-on-failure
+      - name: Simulator and web API tests
+        run: |
+          cmake -S embedded/sim -B build/sim
+          cmake --build build/sim
+          ctest --test-dir build/sim --output-on-failure -R sim
 
   firmware:
     name: Firmware build

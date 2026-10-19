@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Katooni</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --card: #fff; --ink: #1d1d1b; --muted: #6b6b66; --line: #e3e3de;
+    --ok: #2c8a4b; --bad: #c62828; --chip-off: #d9d9d4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --card: #1f1f1d; --ink: #ececea; --muted: #9a9a94; --line: #33332f; --chip-off: #3c3c38; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 system-ui, -apple-system, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  .tally { color: var(--muted); font-size: 13px; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  button.danger { border-color: var(--bad); color: var(--bad); }
+  .last { display: grid; grid-template-columns: 88px 1fr; gap: 12px; align-items: center; }
+  .swatch { width: 88px; height: 88px; border-radius: 10px; display: grid; place-items: center; font: 700 44px/1 ui-monospace, monospace; }
+  .swatch.small { width: 44px; height: 44px; font-size: 22px; border-radius: 8px; }
+  .label { font: 600 17px/1.3 ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
+  .last > div, .bag > div { min-width: 0; }
+  .reason { color: var(--muted); }
+  .reason.bad { color: var(--bad); }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+  .tag.warn { border-color: #e0a100; color: #b07d00; }
+  .bag { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .bag:first-of-type { border-top: 0; }
+  .spec { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .count { font: 600 18px/1 ui-monospace, monospace; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+  .chip { font: 12px/1 ui-monospace, monospace; padding: 4px 6px; border-radius: 6px; background: var(--chip-off); color: var(--muted); }
+  .chip.on { background: var(--ok); color: #fff; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--muted); }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 8px 0 0; font-size: 13px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-family: ui-monospace, monospace; word-break: break-all; }
+  ul.faulty { margin: 0; padding-left: 18px; }
+  .empty { color: var(--muted); }
+  .offline { color: var(--bad); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Katooni</h1>
+  <span class="tally" id="tally"></span>
+  <button id="new" class="danger" type="button">New session</button>
+</header>
+<main>
+  <section id="last-section">
+    <h2>Last cable</h2>
+    <div id="last" class="empty">Plug a cable into both ends.</div>
+  </section>
+  <section>
+    <h2>Bags</h2>
+    <div id="bags" class="empty">No cables yet.</div>
+  </section>
+  <section id="faulty-section" hidden>
+    <h2>Faulty</h2>
+    <ul class="faulty" id="faulty"></ul>
+  </section>
+  <div class="offline" id="offline" hidden>Can't reach Katooni: retrying.</div>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// Black text on light swatches.
+function ink(hex) {
+  const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  return r * 299 + g * 587 + b * 114 > 150000 ? "#000" : "#fff";
+}
+
+function specLine(spec) {
+  const parts = [spec.class];
+  if (spec.emarker) {
+    const e = spec.emarker;
+    parts.push(`e-marker ${e.vid}:${e.pid}`, `${e.max_v} V ${e.max_a} A (${e.watts} W)`, e.speed, e.length);
+    if (e.active) parts.push("active");
+    if (e.epr) parts.push("EPR");
+  } else if (spec.kind !== "RJ45") {
+    parts.push("no e-marker");
+  }
+  if (spec.resistance) parts.push(`${spec.resistance.loop_mohm} mΩ loop${spec.resistance.too_thin ? " (thin!)" : ""}`);
+  if (spec.shield) parts.push("shielded");
+  if (spec.otg) parts.push("OTG");
+  return parts.filter(Boolean).join(" · ");
+}
+
+function renderSession(s) {
+  $("tally").textContent = `${s.tested} tested · ${s.bags.length} bags${s.faulty_total ? ` · ${s.faulty_total} faulty` : ""}`;
+  const bags = $("bags");
+  if (!s.bags.length) {
+    bags.className = "empty";
+    bags.textContent = "No cables yet.";
+  } else {
+    bags.className = "";
+    bags.innerHTML = s.bags.map((b) => `
+      <div class="bag">
+        <div class="swatch small" style="background:${esc(b.colour)};color:${ink(b.colour)}" title="${esc(b.colour_name)}">${esc(b.letter)}</div>
+        <div>
+          <div class="label">${esc(b.label)}${b.singleton ? '<span class="tag warn">label this one individually</span>' : ""}</div>
+          <div class="spec">${esc(specLine(b.spec))}</div>
+        </div>
+        <div class="count">×${b.count}</div>
+      </div>`).join("");
+  }
+  $("faulty-section").hidden = !s.faulty.length;
+  $("faulty").innerHTML = s.faulty.map((f) => `<li><span class="label">${esc(f.label)}</span> <span class="reason bad">${esc(f.reason)}</span></li>`).join("");
+}
+
+function renderLast(l) {
+  const el = $("last");
+  if (!l.have) {
+    el.className = "empty";
+    el.textContent = "Plug a cable into both ends.";
+    return;
+  }
+  el.className = "";
+  const r = l.result, colour = r.faulty ? "#d62728" : (r.colour || "#7f7f7f");
+  const tag = r.faulty ? "faulty" : r.full ? "no room for a new bag" : r.new_bag ? "new bag" : `×${r.count}`;
+  const chips = l.nets.map((n) => `<span class="chip${n.present ? " on" : ""}">${esc(n.name)}</span>`).join("");
+  const res = l.resistance.measured
+    ? `${l.resistance.loop_mohm} mΩ; copper fits ${l.resistance.copper_amps ? l.resistance.copper_amps + " A" : "less than 3 A"}${l.resistance.awg ? `; about ${l.resistance.awg} AWG` : ""}`
+    : "not measured";
+  el.innerHTML = `
+    <div class="last">
+      <div class="swatch" style="background:${colour};color:${ink(colour)}">${r.faulty ? "!" : esc(r.letter || "?")}</div>
+      <div>
+        <div class="label">${esc(l.label)}<span class="tag">${esc(tag)}</span></div>
+        <div class="reason${r.faulty ? " bad" : ""}">${esc(l.reason)}</div>
+      </div>
+    </div>
+    <div class="chips" aria-label="Conductors">${chips}</div>
+    <details>
+      <summary>Details</summary>
+      <dl>
+        <dt>Cable</dt><dd>${esc(specLine(l.spec))}</dd>
+        ${l.faults.length ? `<dt>Faults</dt><dd>${l.faults.map(esc).join("<br>")}</dd>` : ""}
+        ${l.rj45_map ? `<dt>RJ45 map</dt><dd>${l.rj45_map.map((b, a) => `${a + 1}→${b || "–"}`).join(" ")}</dd>` : ""}
+        <dt>Plugs</dt><dd>A end ${l.flip_a ? "upside down" : "right way up"}, B end ${l.flip_b ? "upside down" : "right way up"}${l.ra ? "; VCONN pulled to GND (Ra)" : ""}</dd>
+        <dt>E-marker</dt><dd>${esc(l.emarker_reply.status)}${l.emarker_reply.vdos.length ? ": " + l.emarker_reply.vdos.map(esc).join(" ") : ""}</dd>
+        <dt>Resistance</dt><dd>${esc(res)}</dd>
+      </dl>
+    </details>`;
+}
+
+let seq = -1;
+async function poll() {
+  try {
+    const last = await (await fetch("/api/last", { cache: "no-store" })).json();
+    if (last.seq !== seq) {
+      seq = last.seq;
+      renderLast(last);
+      renderSession(await (await fetch("/api/session", { cache: "no-store" })).json());
+    }
+    $("offline").hidden = true;
+  } catch (e) {
+    $("offline").hidden = false;
+  }
+  setTimeout(poll, 1500);
+}
+
+// Two taps to clear, so a stray one can't lose the session (and no browser dialogs).
+let armed = null;
+$("new").addEventListener("click", async () => {
+  const b = $("new");
+  if (!armed) {
+    b.textContent = "Tap again to clear";
+    armed = setTimeout(() => { armed = null; b.textContent = "New session"; }, 4000);
+    return;
+  }
+  clearTimeout(armed);
+  armed = null;
+  b.textContent = "New session";
+  await fetch("/api/session/new", { method: "POST" });
+  seq = -1;
+});
+
+poll();
+</script>
+</body>
+</html>
