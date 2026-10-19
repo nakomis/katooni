@@ -13,7 +13,8 @@ def pad_shapes(circuit, placement):
         for pad in inst.part.footprint.pads:
             dx, dy = rotate(pad.x, pad.y, rot)
             w, h = (pad.h, pad.w) if round(pad.rot + rot) % 180 == 90 else (pad.w, pad.h)
-            layers = {"F.Cu", "B.Cu"} if pad.kind == "thru_hole" else {"F.Cu"}
+            # a plated hole is on every copper layer (the inner ones too, on a 4-layer board)
+            layers = {"F.Cu", "In1.Cu", "In2.Cu", "B.Cu"} if pad.kind == "thru_hole" else {"F.Cu"}
             out.append((circuit.net_of(ref, pad.number), layers, x + dx - w / 2, y + dy - h / 2,
                         x + dx + w / 2, y + dy + h / 2))
     return out

@@ -19,7 +19,7 @@ extended-part loading fee (about $3 per unique part per order); "Basic" parts do
 | | SMBJ5.0A TVS | C78423 | Ext | 1 | $0.06 | Clamps surges; a reversed supply forward-biases it and trips the PTC |
 | | USBLC6-2SC6 | C7519 | Ext | 1 | $0.16 | ESD on D+/D− |
 | | AP2112K-3.3 | C51118 | Ext | 1 | $0.16 | 600 mA LDO |
-| I/O expanders | MCP23017T-E/SS | C558584 | Ext | 5 | $1.63 | 80 lines, 68 used; internal 100k pull-ups |
+| I/O expanders | TCA9555PWR | C465732 | Ext | 5 | $0.70 | 80 lines, 68 used; all bidirectional; internal 100k pull-ups |
 | E-marker | FUSB302BMPX | C132291 | Ext | 1 | $0.84 | PD PHY on the A-end USB-C; its VCONN switch powers the e-marker |
 | Resistance | INA226AIDGSR | C49851 | Ext | 3 | $0.73 | Current, VBUS-conductor drop, GND-conductor drop |
 | | 20 Ω 2512 1 W | C41950 | Ext | 1 | $0.04 | Sets the test current (~0.24 A) |
@@ -49,9 +49,16 @@ load test (~0.24 A). The firmware should not sound the buzzer during a load test
 
 ### Test lines
 
-Every conductor of every test port is a **line**: a series resistor to one MCP23017 pin. The
-firmware drives one line low and reads every other line with the expanders' internal pull-ups: any
-line that reads low is connected to it through the cable.
+Every conductor of every test port is a **line**: a series resistor to one TCA9555 pin. The
+firmware drives one line low and reads every other line with the expanders' internal 100 kΩ pull-ups:
+any line that reads low is connected to it through the cable.
+
+**Why TCA9555, not MCP23017:** the first draft used MCP23017s, but on current MCP23017 datasheets
+GPA7 and GPB7 are **output-only**, and every line must be read as well as driven. All sixteen
+TCA9555 pins are bidirectional; it is also cheaper. Its pull-ups are always on (the TCA9535 is the
+same chip without them), which is harmless here: on the CC lines they add ~30 µA through the series
+resistor, far below anything that disturbs Rp/Rd detection or BMC signalling. It has no reset pin;
+the firmware re-initialises the expanders over I²C.
 
 | End | Port | Lines |
 |---|---|---|
@@ -80,8 +87,8 @@ limit the expander clamp current to ~1 mA, and the firmware keeps those pins as 
 
 On the A-end USB-C's CC1/CC2, on I²C bus 1 (its address, 0x22, is inside the expanders' range,
 hence a second bus). VCONN comes from `VBUS` through its internal switch to whichever CC pin is
-the cable's VCONN pin. The firmware must leave the CC lines' expander pins as inputs with
-pull-ups off during PD traffic, and put the FUSB302's CC pull-downs off during a continuity scan.
+the cable's VCONN pin. The firmware must leave the CC lines' expander pins as inputs during PD
+traffic, and switch the FUSB302's CC pull-ups/pull-downs off during a continuity scan.
 
 ### Resistance check (Kelvin)
 
@@ -133,7 +140,7 @@ flyback diode.
 | 6 | FUSB302 INT_N | 14 | Load enable (Q1) |
 | 7 | LCD backlight | 15 | A-end return (Q3) |
 | 8 | LCD RST | 16 | B-end short (Q4/Q5) |
-| 9 | LCD D/C | 17 | Expander reset (all five) |
+| 9 | LCD D/C | 17 | (spare) |
 | 10 | LCD CS | 19 / 20 | Native USB D− / D+ |
 | 43 / 44 | UART0 TX / RX (debug pads) | | |
 
@@ -141,8 +148,15 @@ The firmware gets these from `out/main/pins.h`, which the generator writes.
 
 ## Board
 
-- 100 × 70 mm, **4 layers**: F.Cu signals, In1.Cu a solid GND plane, In2.Cu and B.Cu signals.
-  1.6 mm, ENIG, black mask, white silk (as tinycrypt).
+- 100 × 70 mm, **4 layers**: F.Cu signals, In1.Cu a solid GND plane, In2.Cu and B.Cu signals,
+  with GND pours on F.Cu and B.Cu. 1.6 mm, ENIG, black mask, white silk (as tinycrypt).
+- **GND is never autorouted.** Every SMD GND pad gets a short fanout track to its own via into the
+  plane before routing (`board/gnd.py`); after routing, stitching vias on a 2.5 mm grid tie the
+  outer pours to the plane. Freerouting left about a third of the GND connections open when it had to
+  find them itself.
+- **The analog block** (FUSB302, INA226s, load switches, shunt) sits in the band between the module
+  and the expanders, not by the ports, so the 68 test lines have the space between the resistor rows
+  and the ports to themselves.
 - **Front edge (y = 70):** the test ports, openings flush with the edge. A cluster on the left:
   RJ45, USB-A, USB-C; B cluster on the right: USB-C, micro-B, RJ45.
 - **Back edge (y = 0):** the module, its antenna at the edge with a copper keep-out (all layers)
