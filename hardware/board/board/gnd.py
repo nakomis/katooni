@@ -42,6 +42,18 @@ def _seg_dist(px, py, ax, ay, bx, by):
     return math.hypot(px - ax - t * vx, py - ay - t * vy)
 
 
+def _seg_seg_dist(ax, ay, bx, by, cx, cy, dx, dy):
+    """Distance between segments AB and CD: 0 if they cross, else the nearest endpoint distance."""
+    def orient(px, py, qx, qy, rx, ry):
+        return (qx - px) * (ry - py) - (qy - py) * (rx - px)
+    o1, o2 = orient(ax, ay, bx, by, cx, cy), orient(ax, ay, bx, by, dx, dy)
+    o3, o4 = orient(cx, cy, dx, dy, ax, ay), orient(cx, cy, dx, dy, bx, by)
+    if o1 * o2 < 0 and o3 * o4 < 0:
+        return 0.0
+    return min(_seg_dist(cx, cy, ax, ay, bx, by), _seg_dist(dx, dy, ax, ay, bx, by),
+               _seg_dist(ax, ay, cx, cy, dx, dy), _seg_dist(bx, by, cx, cy, dx, dy))
+
+
 def _inside(x, y, outline, keepouts, margin):
     x0, y0, x1, y1 = outline
     if not (x0 + margin <= x <= x1 - margin and y0 + margin <= y <= y1 - margin):
@@ -94,6 +106,79 @@ def gnd_fanout(circuit, placement, keepouts=(), net="GND"):
             if not done:
                 misses.append((ref, pad.number))
     return tracks, vias, misses
+
+
+def escape_vias(circuit, placement, ref, pad_numbers, toward=(0.0, 1.0), taken=(), clear=0.16):
+    """(tracks, vias, misses): a short F.Cu track from each named pad of 'ref' to its own via,
+    stepping 'toward' (a unit vector in the part's frame) from the pad, with small sideways offsets,
+    so the router can take each signal from the via on any layer. For a USB-C receptacle's B row,
+    whose pads can only leave forward under the body: the router stranded one of them on every
+    arrangement tried. 'taken' are vias already placed (the GND fanout), to keep clear of."""
+    x0, y0, rot = placement.at[ref]
+    near = lambda b: abs((b[2] + b[4]) / 2 - x0) < 8 and abs((b[3] + b[5]) / 2 - y0) < 8
+    pads = [b for b in pad_boxes(circuit, placement) if near(b)]
+    taken = [v for v in taken if abs(v.x - x0) < 8 and abs(v.y - y0) < 8]
+    inst = circuit.instances[ref]
+    ux, uy = rotate(toward[0], toward[1], rot)
+    sx, sy = -uy, ux                                       # sideways, in board frame
+    tracks, vias, misses = [], [], []
+    placed = list(taken)
+    for number in pad_numbers:
+        pad = next(q for q in inst.part.footprint.pads if q.number == number)
+        net = circuit.net_of(ref, number)
+        dx, dy = rotate(pad.x, pad.y, rot)
+        cx, cy = x0 + dx, y0 + dy
+        reach = abs(toward[0]) * pad.w / 2 + abs(toward[1]) * pad.h / 2
+        others = [b for b in pads if b[0] != net]
+        done = False
+        for step in (0.45, 0.85, 1.25, 1.65, 2.05, 2.45, 2.85):
+            for side in (0.0, 0.25, -0.25, 0.5, -0.5, 0.75, -0.75, 1.0, -1.0, 1.25, -1.25, 1.5, -1.5, 1.75, -1.75, 2.0, -2.0):
+                d = reach + VIA_R - 0.15 + step
+                vx, vy = round(cx + ux * d + sx * side, 3), round(cy + uy * d + sy * side, 3)
+                if any(_box_dist(vx, vy, b) < VIA_R + clear for b in others):
+                    continue
+                if any(math.hypot(vx - v.x, vy - v.y) < 2 * VIA_R + clear for v in placed):
+                    continue
+                if any(_seg_box_dist(cx, cy, vx, vy, b) < 0.075 + clear for b in others):
+                    continue
+                if any(_seg_dist(v.x, v.y, cx, cy, vx, vy) < VIA_R + 0.075 + clear for v in placed if v.net != net):
+                    continue
+                if any(_seg_seg_dist(t.x1, t.y1, t.x2, t.y2, cx, cy, vx, vy) < 0.15 + clear
+                       for t in tracks if t.net != net):
+                    continue
+                if any(_seg_dist(vx, vy, t.x1, t.y1, t.x2, t.y2) < VIA_R + 0.075 + clear
+                       for t in tracks if t.net != net):
+                    continue
+                tracks.append(Track(net, "F.Cu", round(cx, 4), round(cy, 4), vx, vy, 0.15))
+                v = Via(net, vx, vy)
+                vias.append(v)
+                placed.append(v)
+                done = True
+                break
+            if done:
+                break
+        if not done:
+            misses.append((ref, number))
+    return tracks, vias, misses
+
+
+def escape_vias_any_order(circuit, placement, ref, pad_numbers, tries=400, **kw):
+    """escape_vias with the pads tried in many orders (the given one, then deterministic shuffles),
+    returning the first result that places every pad, or else the one with fewest misses. The
+    greedy placement depends a lot on order: a via taken early can wall in a neighbour's track."""
+    import random
+    rng = random.Random(1)
+    order = list(pad_numbers)
+    best = None
+    for k in range(tries):
+        res = escape_vias(circuit, placement, ref, order, **kw)
+        if best is None or len(res[2]) < len(best[2]):
+            best = res
+        if not res[2]:
+            break
+        order = list(pad_numbers)
+        rng.shuffle(order)
+    return best
 
 
 def stitch_vias(circuit, placement, tracks, vias, keepouts=(), pitch=2.5, clear=0.4, net="GND"):

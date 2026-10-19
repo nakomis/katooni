@@ -39,6 +39,15 @@ footprint and symbol, so only one is fetched.
   as obstacles on every layer.
 - **GND is never autorouted** (`board/gnd.py`): a fanout via per SMD GND pad before routing,
   stitching vias after, GND pours on F.Cu and B.Cu over the In1.Cu plane.
+- **USB-C B-row escapes** (`gnd.escape_vias_any_order`): the receptacles' B-row pads can only
+  leave forward, under the body, and the router always stranded one. Each gets a short track to its
+  own via before routing; the greedy placement is retried in up to 400 pad orders until all fit.
+  The B-row VBUS/GND pads are left unconnected (the plug joins them to the A-row ones).
+- **Placement variants:** Freerouting is deterministic for a given layout but chaotic across
+  layouts, so `build.py --variant K` nudges the small resistors and capacitors by up to ±0.3 mm
+  (seeded, never into an overlap). `board/katooni_board.py` `VARIANT` records the one that routed
+  completely. To search again after a change, run a few at once with separate outputs:
+  `for v in 1 2 3 4; do .venv/bin/python build.py --route --variant $v --out v$v & done`.
 - **Hand-edited footprints:** the RJ45's second shield pad is `SH2`, the USB-A's second shell pad
   `10b` and the micro-B's other shell pads `0b`–`0d`, so that only one shell pad per connector is on
   the shield line (the metal joins the rest). Re-running `fetch_parts.sh` with those parts missing

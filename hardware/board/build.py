@@ -13,7 +13,7 @@ from pathlib import Path
 from board import katooni_board as kb
 from board.cleanup import prune
 from board.fab import export_step, fab, write_bom, write_cpl
-from board.gnd import gnd_fanout, stitch_vias
+from board.gnd import escape_vias_any_order, gnd_fanout, stitch_vias
 from board.kicad_pcb import write_board
 from board.netlist import check
 from board.route import route
@@ -57,6 +57,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--board", choices=sorted(BOARDS), default="main")
     ap.add_argument("--route", action="store_true")
+    ap.add_argument("--variant", type=int, default=None,
+                    help="placement variant (default: board/katooni_board.py VARIANT, the one that routes)")
+    ap.add_argument("--out", default=None, help="output directory name under out/ (default: the board name)")
     ap.add_argument("--passes", type=int, default=100)
     ap.add_argument("--step", action="store_true",
                     help="also fetch the 3D models and write the STEP model and a 3D render")
@@ -64,27 +67,33 @@ def main():
                     help="write the board and report DRC, but skip the fab outputs instead of failing")
     a = ap.parse_args()
     stem = BOARDS[a.board]
-    out = HERE / "out" / a.board
+    out = HERE / "out" / (a.out or a.board)
     tmp = out / "tmp"
     tmp.mkdir(parents=True, exist_ok=True)
     c = kb.build_katooni()
     problems = check(c)
     if problems:
         raise SystemExit("\n".join(problems))
-    p = kb.place_katooni(c)
+    p = kb.place_katooni(c, a.variant)
     clash = kb.overlaps(p)
     if clash:
         raise SystemExit(f"placement overlaps: {clash}")
     # GND is never routed: every SMD GND pad gets its own via into the In1.Cu plane first.
     fan_t, fan_v, misses = gnd_fanout(c, p, keepouts=[kb.ANTENNA_KEEPOUT])
     print(f"GND fanout: {len(fan_v)} vias; no room beside {misses or 'none'}")
+    # The USB-C receptacles' B-row pads can only leave forward, under the body: give each its via.
+    for ref in ("J2", "J5"):
+        et, ev, em = escape_vias_any_order(c, p, ref, kb.usbc_b_row(c, ref), taken=fan_v)
+        print(f"{ref} B-row escapes: {len(ev)} vias; no room for {em or 'none'}")
+        fan_t, fan_v = fan_t + et, fan_v + ev
     tracks, vias = list(fan_t), list(fan_v)
     if a.route:
         routed_tracks, routed = route(c, p, tmp, passes=a.passes, layers=LAYERS, route_area=kb.route_area(),
                                       planes=PLANES, power_nets=kb.POWER_NETS, skip_nets=("GND",),
                                       fixed_tracks=fan_t, fixed_vias=fan_v,
-                                      log="/tmp/claude-501/katooni-board-route.log")
-        tracks, vias = prune(c, p, fan_t + routed_tracks, fan_v + routed, keep=fan_v)
+                                      log=f"/tmp/claude-501/katooni-board-route-{a.out or a.board}.log")
+        # only the GND fanout vias are protected: an escape via that ends up joining one layer goes
+        tracks, vias = prune(c, p, fan_t + routed_tracks, fan_v + routed, keep=[v for v in fan_v if v.net == "GND"])
         stitch = stitch_vias(c, p, tracks, vias, keepouts=[kb.ANTENNA_KEEPOUT])
         print(f"stitching: {len(stitch)} GND vias")
         vias += stitch

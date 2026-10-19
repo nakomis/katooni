@@ -28,15 +28,17 @@ FUSB_ADDR = 0x22
 
 # USB-C receptacle pads, by function (the cable's view): CC, D+/D- on both rows (a plug only
 # touches one row's pair, so the pair it lands on tells the orientation), SBU, the four SuperSpeed
-# pairs. VBUS and GND are split for Kelvin sensing: one A-row pad of each carries the test current
-# (force), one B-row pad senses. The plug joins all four VBUS (and all four GND) contacts inside
-# itself, so the other pads are left unconnected rather than routed together on the board: that
-# freed the congested area behind the receptacle (0.24 A is far inside one contact's rating).
+# pairs. VBUS and GND are split for Kelvin sensing: one pad of each carries the test current
+# (force), another senses. They are separate plug contacts that the plug joins inside itself, so the
+# sense pad reads the voltage at the plug with no current in it. Both are on the A row, which
+# escapes backwards freely; the B row's pads can only leave forward under the body, and with
+# twelve of them there the router (and a greedy fanout) always stranded one. The remaining VBUS/GND
+# pads are left unconnected (0.24 A is far inside one contact's rating).
 USBC_SIGNALS = {"CC1": "A5", "CC2": "B5", "DP1": "A6", "DN1": "A7", "DP2": "B6", "DN2": "B7",
                 "SBU1": "A8", "SBU2": "B8", "TX1P": "A2", "TX1N": "A3", "RX1P": "B11", "RX1N": "B10",
                 "TX2P": "B2", "TX2N": "B3", "RX2P": "A11", "RX2N": "A10"}
 USBC_FORCE = {"VBUS": ("A4",), "GND": ("A1",)}
-USBC_SENSE = {"VBUS": ("B9",), "GND": ("B1",)}
+USBC_SENSE = {"VBUS": ("A9",), "GND": ("A12",)}
 USBA_SIGNALS = {"DN": "2", "DP": "3", "SSRXN": "5", "SSRXP": "6", "GD": "7", "SSTXN": "8", "SSTXP": "9"}
 MICROB_SIGNALS = {"DN": "D-", "DP": "D+", "ID": "ID"}
 
@@ -328,7 +330,7 @@ FRONT = H + 0.3
 MOD_X, MOD_Y = 50.0, 12.8          # the module's origin; its antenna strip ends on the y = 0 edge
 EXP_Y = 36.0                       # expander row
 EXP_X = {"U10": 15.0, "U12": 29.0, "U11": 43.5, "U13": 56.5, "U14": 82.0}
-PORT_X = {"J4": 10.5, "J3": 29.5, "J2": 43.5, "J5": 58.0, "J6": 68.5, "J7": 89.0}
+PORT_X = {"J4": 10.5, "J3": 29.5, "J2": 43.5, "J5": 58.5, "J6": 69.0, "J7": 89.0}
 
 
 def _ports():
@@ -385,8 +387,8 @@ def _at():
         # Left band: A-end pull-ups and ties, the FUSB302, the load switch and its driver, the A-end
         # return switch.
         "R9": (20.0, 24.0, 90), "R10": (21.2, 24.0, 90), "R13": (20.0, 27.5, 90), "R14": (21.2, 27.5, 90),
-        "C15": (23.4, 24.0, 90), "U4": (26.0, 24.0, 0), "C16": (28.6, 24.0, 90), "C17": (30.2, 24.0, 90),
-        "R17": (26.0, 27.2, 0),
+        "C15": (22.8, 24.0, 90), "U4": (26.0, 24.0, 0), "C16": (29.4, 24.0, 90), "C17": (31.0, 24.0, 90),
+        "R17": (26.0, 27.9, 0),
         "Q1": (35.5, 24.0, 0), "R18": (38.5, 24.0, 90), "Q2": (41.0, 25.5, 0), "R19": (41.0, 28.5, 0),
         "Q3": (31.0, 28.3, 0), "R22": (34.5, 28.5, 0),
         # Below the module: the two drop INA226s.
@@ -404,13 +406,33 @@ def _at():
     return at
 
 
-def place_katooni(circuit):
+# Freerouting is deterministic for a given layout but chaotic across layouts: every arrangement tried
+# left one or two different connections open. VARIANT nudges the small resistors and capacitors by
+# up to +-0.3 mm (seeded, never into an overlap), and build.py --variant K searches; this is the one
+# that routed completely.
+VARIANT = 0
+
+
+def place_katooni(circuit, variant=None):
+    import random
+    variant = VARIANT if variant is None else variant
     at = _at()
     missing = set(circuit.instances) - set(at)
     if missing:
         raise KeyError(f"no position for {sorted(missing)}")
     bodies = {r: i.part.body for r, i in circuit.instances.items()}
-    return Placement((0.0, 0.0, W, H), {r: at[r] for r in circuit.instances}, bodies)
+    p = Placement((0.0, 0.0, W, H), {r: at[r] for r in circuit.instances}, bodies)
+    if variant:
+        rng = random.Random(variant)
+        for ref in sorted(p.at):
+            key = circuit.instances[ref].part.key
+            if key[:1] not in "RC" or key == "RJ45":
+                continue
+            x, y, rot = p.at[ref]
+            p.at[ref] = (round(x + rng.uniform(-0.3, 0.3), 3), round(y + rng.uniform(-0.3, 0.3), 3), rot)
+            if any(ref in pair for pair in overlaps(p)):
+                p.at[ref] = (x, y, rot)
+    return p
 
 
 def overlaps(placement, gap=0.0):
@@ -536,3 +558,13 @@ def pad_extra():
             return [[Sym("zone_connect"), 2]]
         return []
     return {"U1": u1, "U4": lambda pad: [[Sym("zone_connect"), 2]] if pad.number == "15" else []}
+
+
+def usbc_b_row(circuit, ref):
+    """The connected B-row pads of a USB-C receptacle, ordered from the middle of the row outwards:
+    the inner pads take the vias nearest the row, and the outer ones go further out and to the side
+    (a via straight in front of an outer pad would block the track of the pad next to it)."""
+    pads = [q for q in circuit.instances[ref].part.footprint.pads
+            if q.number.startswith("B") and circuit.net_of(ref, q.number)]
+    mid = sum(q.x for q in pads) / len(pads)
+    return [q.number for q in sorted(pads, key=lambda q: abs(q.x - mid))]

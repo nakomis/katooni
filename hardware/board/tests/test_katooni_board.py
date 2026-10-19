@@ -37,10 +37,10 @@ def test_cc_series_resistors():
 def test_usbc_vbus_and_gnd_are_split_by_row_for_kelvin_sensing():
     for end, ref in (("A", "J2"), ("B", "J5")):
         assert {p for r, p in _pads_of(f"{end}_VBUS") if r == ref} == {"A4"}
-        assert {p for r, p in _pads_of(f"{end}_VBUS_S") if r == ref} == {"B9"}
+        assert {p for r, p in _pads_of(f"{end}_VBUS_S") if r == ref} == {"A9"}
         assert {p for r, p in _pads_of(f"{end}_GND") if r == ref} == {"A1"}
-        assert {p for r, p in _pads_of(f"{end}_GND_S") if r == ref} == {"B1"}
-        for pad in ("A9", "A12", "B4", "B12"):            # joined inside the plug, not on the board
+        assert {p for r, p in _pads_of(f"{end}_GND_S") if r == ref} == {"A12"}
+        for pad in ("B1", "B4", "B9", "B12"):             # joined inside the plug, not on the board
             assert C.net_of(ref, pad) is None
 
 
