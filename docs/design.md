@@ -76,6 +76,11 @@ These would need lab gear, so Katooni won't attempt them:
 
 ## Hardware *(Claude's call, following tinycrypt)*
 
+**Decided (Martin, 19 Oct 2026): fully JLCPCB-assembled, no protoboard and no hand-built
+prototype.** The board needs about 67 drive/sense lines (one per conductor per port), which is
+roughly 550–650 joints and 70–80 wires on protoboard. Hand assembly is limited to the house USB
+cable and the case.
+
 - **ESP32-S3-MINI-1** with ESP-IDF 5.5. Power and flashing through the house USB connector
   (JST SH 1.0 5-pin; see CLAUDE.md in `~/` and tinycrypt `hardware/key-board/README.md`). That
   gives 5 V at 1 A max, enough for a brief 1 A load test.
