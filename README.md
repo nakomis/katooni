@@ -1,5 +1,7 @@
 # Katooni — a DIY cable tester that sorts the drawer
 
+<img src="docs/logo.png" alt="Katooni logo" width="200" align="right"/>
+
 ## Support
 
 If you find this useful, please consider buying me a coffee:
