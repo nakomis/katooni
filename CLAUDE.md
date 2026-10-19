@@ -15,6 +15,7 @@ firmware approach. Read it before starting any work item.
 | `docs/design.md` | The v1 design |
 | `docs/architecture/` | draw.io diagrams; SVGs are generated on commit |
 | `docs/logo-candidates/` | Logo candidates |
+| `embedded/core/` | Portable C core: classification, e-marker decoding, resistance, bagging; Mac tests |
 | `embedded/` | ESP-IDF 5.5 firmware (to come) |
 | `hardware/board/` | Code-generated PCB for JLCPCB assembly (to come) |
 | `hardware/case/` | Onshape FeatureScript case (to come) |
@@ -33,8 +34,30 @@ firmware approach. Read it before starting any work item.
 
 ## Testing
 
-Host-side unit tests for the portable core, with 70% coverage minimum. Commands to be added with
-the first firmware work item.
+The portable core (`embedded/core/`: pure C11, no ESP-IDF) builds and is tested on the Mac.
+Coverage must stay at 70% or above; it was 98.8% of lines when the core landed.
+
+```bash
+cmake -S embedded/core -B build/core && cmake --build build/core && ctest --test-dir build/core
+embedded/core/coverage.sh          # the same with clang coverage, plus a per-file report
+```
+
+- Each `tests/test_*.c` is its own program using the macros in `tests/check.h`.
+- `simcable.c` makes synthetic scans and e-marker replies for the tests and the Mac simulator. The
+  tests also include hand-written scans and a hand-built e-marker reply, so they don't only check
+  the classifier against its own tables.
+- **No e-marker reply in the tests is captured from a real cable yet.** Add real captures to
+  `tests/test_emarker.c` once the board runs.
+
+### Core conventions
+
+- **Every connector pin is its own line** (`lines.h`): 71 in all. The hardware must never tie a
+  connector's GND, VBUS or shield to board ground, except while a PD or load test runs.
+- **A scan is a set of joins** (`scan.h`, union-find). The classifier tries every USB-C plug
+  orientation and keeps the one that explains the most wires.
+- **Allowed incidental joins** aren't faults: Ra on a plug's VCONN pin, Rp on an A-to-C cable's
+  CC, Rd on a C-to-micro-B cable's CC, a micro-B ID tied to GND (OTG), and shield to GND. The
+  hardware decides whether such a resistor reads as "joined", so the core accepts either.
 
 ## Architecture diagrams
 
