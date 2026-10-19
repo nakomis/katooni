@@ -68,9 +68,21 @@ def _courtyard(node, pads):
     return (min(xs), min(ys), max(xs), max(ys))
 
 
+def _npth(node):
+    """EasyEDA exports a connector's plastic locating pegs as unnumbered plated pads whose copper is
+    exactly the drill (no ring), which DRC rejects; they are non-plated holes, so make them that."""
+    for p in find_all(node, "pad"):
+        drill, size = find(p, "drill"), find(p, "size")
+        if str(p[1]) == "" and str(p[2]) == "thru_hole" and drill and \
+                all(isinstance(v, (int, float)) for v in drill[1:2]) and drill[1] >= min(size[1], size[2]) - 1e-6:
+            p[2] = Sym("np_thru_hole")
+            find(p, "layers")[1:] = ["*.Cu", "*.Mask"]
+
+
 def load_footprint(path):
     node = parse(Path(path).read_text())
     node[0] = Sym("footprint")
+    _npth(node)
     pads = [_pad(p) for p in find_all(node, "pad")]
     return Footprint(str(node[1]), node, pads, _courtyard(node, pads))
 

@@ -7,6 +7,7 @@ Board frame (KiCad, y down): x 0..W, y 0..H. The module's antenna sits on the y 
 back), the test ports open across the y = H edge (the front).
 """
 from board.netlist import Circuit
+from board.placement import Placement, bbox
 
 W, H = 100.0, 70.0
 
@@ -310,3 +311,196 @@ def _pin_by_pad(inst, pad):
 
 def _usbc_pin(inst, pad):
     return _pin_by_pad(inst, pad)
+
+
+# --- Placement -----------------------------------------------------------------------------------
+# (x, y, rotation) per ref. KiCad rotation is counter-clockwise on screen. Ports: openings 0.3 mm
+# proud of the front edge (y = H) so the case's port holes can be snug.
+FRONT = H + 0.3
+MOD_X, MOD_Y = 50.0, 12.8          # the module's origin; its antenna strip ends on the y = 0 edge
+EXP_Y = 36.0                       # expander row
+EXP_X = {"U10": 15.0, "U12": 29.0, "U11": 43.5, "U13": 56.5, "U14": 82.0}
+PORT_X = {"J4": 10.5, "J3": 29.5, "J2": 43.5, "J5": 56.5, "J6": 68.0, "J7": 89.0}
+
+
+def _ports():
+    from board.parts import BODY
+    return {
+        "J4": (PORT_X["J4"], round(FRONT + BODY["RJ45"][1], 3), 180),     # RJ45 opens at its -y
+        "J3": (PORT_X["J3"], round(FRONT - BODY["USBA"][3], 3), 0),
+        "J2": (PORT_X["J2"], round(FRONT - BODY["USBC"][3], 3), 0),
+        "J5": (PORT_X["J5"], round(FRONT - BODY["USBC"][3], 3), 0),
+        "J6": (PORT_X["J6"], round(FRONT - BODY["MICROB"][3], 3), 0),
+        "J7": (PORT_X["J7"], round(FRONT + BODY["RJ45"][1], 3), 180),
+    }
+
+
+def _series_at():
+    """Each expander's 16 series resistors, vertical, in two rows of eight below it: GPA0-7 in the
+    upper row, GPB0-7 in the lower, left to right."""
+    at = {}
+    for ref, cx in EXP_X.items():
+        base = 100 + 20 * (int(ref[1:]) - 10)
+        for slot in range(16):
+            row, col = divmod(slot, 8)
+            at[f"R{base + slot}"] = (round(cx - 5.25 + 1.5 * col, 3), EXP_Y + 7.6 + 2.2 * row, 90)
+    return at
+
+
+def _at():
+    m = lambda dx, dy, rot=0: (round(MOD_X + dx, 3), round(MOD_Y + dy, 3), rot)
+    at = {
+        # module and its neighbours, at tinycrypt's offsets from the module where they apply
+        "U1": (MOD_X, MOD_Y, 0),
+        "C5": m(-9.0, -4.75, 90), "C4": m(-9.0, -2.1, 270), "R3": m(-9.0, 0.55, 90),
+        "R2": m(9.1, -5.15, 0), "C6": m(9.1, -3.45, 180), "TP1": m(9.4, 3.25, 0),
+        "SW1": (34.0, 14.5, 90),
+        "R4": (38.4, 16.0, 0), "R5": (38.4, 17.2, 0), "R6": (38.4, 18.4, 0), "R7": (38.4, 19.6, 0),
+        "R8": (47.0, 23.0, 0),
+        # power in, back left: J1 opens across the y = 0 edge
+        "J1": (12.0, 3.21, 180), "R1": (17.6, 5.0, 90),
+        "F1": (5.5, 10.0, 90), "D1": (5.5, 16.0, 90), "U3": (12.0, 11.0, 0),
+        "C1": (9.5, 15.5, 90), "U2": (14.5, 15.8, 0), "C2": (19.0, 13.5, 90), "C3": (19.0, 16.0, 90),
+        # display ZIF and backlight, back right; the panel's tail enters J8 from the +y side
+        "J8": (80.0, 4.0, 0), "R24": (72.0, 9.0, 90), "Q6": (72.0, 13.0, 0), "R25": (72.0, 16.5, 90),
+        "C21": (88.0, 9.5, 90),
+        # buzzer, right
+        "BZ1": (92.0, 18.0, 0), "Q7": (84.5, 17.0, 90), "D2": (84.5, 21.5, 90), "R26": (81.5, 17.0, 90),
+        # mounting holes
+        "H1": (3.0, 3.0, 0), "H2": (97.0, 3.0, 0), "H3": (3.0, 50.5, 0), "H4": (97.0, 50.5, 0),
+        # The analog block, between the expanders' resistor rows and the USB-C ports, in three rows.
+        # Row 1: A-end pull-ups, the FUSB302 and its decoupling, the load switch, the 20R.
+        "R9": (34.0, 49.5, 90), "R10": (35.2, 49.5, 90), "C15": (36.4, 49.5, 90), "U4": (38.9, 49.5, 0),
+        "C16": (41.4, 49.5, 90), "C17": (43.0, 49.5, 90), "R17": (44.5, 49.5, 90),
+        "Q1": (47.5, 49.5, 0), "R18": (50.0, 49.5, 90), "Q2": (52.5, 49.5, 0), "R19": (55.0, 49.5, 90),
+        "R20": (60.5, 49.5, 0), "Q4": (66.5, 50.0, 0), "R11": (69.0, 48.5, 90), "R12": (70.2, 48.5, 90),
+        # Row 2: the shunt, the current and VBUS-drop INA226s, the other half of the B-end short.
+        "R21": (42.5, 54.2, 0), "U5": (50.0, 54.5, 90), "C18": (54.0, 54.5, 90),
+        "U6": (58.5, 54.0, 90), "C19": (62.5, 54.0, 90), "Q5": (66.5, 54.5, 0), "R23": (69.0, 52.5, 90),
+        # Row 3: the A-end return switch, the A-end sense ties, the GND-drop INA226, the B-end ties.
+        "Q3": (40.0, 58.3, 0), "R22": (42.5, 58.3, 90), "R13": (44.0, 58.3, 90), "R14": (45.2, 58.3, 90),
+        "U7": (49.5, 58.5, 90), "C20": (53.4, 58.5, 90), "R15": (56.0, 59.5, 90), "R16": (57.2, 59.5, 90),
+    }
+    for ref, cx in EXP_X.items():
+        at[ref] = (cx, EXP_Y, 90)
+        at["C1" + ref[2]] = (cx + 5.8, EXP_Y - 1.3, 90)
+    at.update(_ports())
+    at.update(_series_at())
+    return at
+
+
+def place_katooni(circuit):
+    at = _at()
+    missing = set(circuit.instances) - set(at)
+    if missing:
+        raise KeyError(f"no position for {sorted(missing)}")
+    bodies = {r: i.part.body for r, i in circuit.instances.items()}
+    return Placement((0.0, 0.0, W, H), {r: at[r] for r in circuit.instances}, bodies)
+
+
+def overlaps(placement, gap=0.0):
+    """Pairs of parts whose rotated bodies overlap (or come within 'gap' mm), and parts poking
+    outside the outline other than the ports' openings."""
+    refs = sorted(placement.at)
+    boxes = {r: bbox(placement, r) for r in refs}
+    out = []
+    for i, a in enumerate(refs):
+        ax0, ay0, ax1, ay1 = boxes[a]
+        for b in refs[i + 1:]:
+            bx0, by0, bx1, by1 = boxes[b]
+            if ax0 < bx1 + gap and bx0 < ax1 + gap and ay0 < by1 + gap and by0 < ay1 + gap:
+                out.append((a, b))
+    x0, y0, x1, y1 = placement.outline
+    for r, (bx0, by0, bx1, by1) in boxes.items():
+        if bx0 < x0 or by0 < y0 or bx1 > x1 or (by1 > y1 and r not in PORT_X):
+            out.append((r, "outline"))
+    return out
+
+
+# Antenna keep-out: no copper on any layer under the antenna strip and 5 mm either side of it,
+# down to the module's top pad row (Espressif's guidance for an on-board antenna at the edge).
+ANTENNA_KEEPOUT = (MOD_X - 7.7 - 5.0, 0.0, MOD_X + 7.7 + 5.0, round(MOD_Y - 7.75 - 0.1, 3))
+
+
+def keepouts():
+    x0, y0, x1, y1 = ANTENNA_KEEPOUT
+    return [("antenna", [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"])]
+
+
+def route_area():
+    """The router's boundary: the outline less the antenna keep-out (a notch in the back edge)."""
+    x0, _, x1, y1 = ANTENNA_KEEPOUT
+    return [(0.0, 0.0), (x0, 0.0), (x0, y1), (x1, y1), (x1, 0.0), (W, 0.0), (W, H), (0.0, H)]
+
+
+# --- Silkscreen, fab notes, firmware header ------------------------------------------------------
+TITLE = "Katooni v0.1"
+CREDIT = "Designed by Nakomis/C"
+# Front labels only where there is room above the port: the USB-C and micro-B ports have the analog
+# block right behind them, and their shapes say what they are anyway.
+PORT_LABELS = {"J4": "RJ45", "J3": "USB-A", "J7": "RJ45"}
+J1_LABELS = {"1": "V", "2": "D-", "3": "D+", "4": "CC", "5": "G"}
+
+
+def _pad_xy(circuit, placement, ref, number):
+    from board.placement import rotate
+    x, y, rot = placement.at[ref]
+    pad = next(q for q in circuit.instances[ref].part.footprint.pads if q.number == number)
+    dx, dy = rotate(pad.x, pad.y, rot)
+    return round(x + dx, 3), round(y + dy, 3)
+
+
+def silk(circuit, placement):
+    """(text, x, y, size[, layer[, rotation]]) entries. Front: the A and B cluster labels and port
+    names above the ports, J1's pin labels, the debug pad labels. Back: the title and credit."""
+    out = []
+    for ref, text in PORT_LABELS.items():
+        x, _, _ = placement.at[ref]
+        out.append((text, x, 51.0, 1.0))
+    ax = (PORT_X["J4"] + PORT_X["J2"]) / 2
+    bx = (PORT_X["J5"] + PORT_X["J7"]) / 2
+    out += [("A", round(ax, 3), 27.5, 2.5), ("B", round(bx, 3), 27.5, 2.5)]
+    for n, text in J1_LABELS.items():
+        x, y = _pad_xy(circuit, placement, "J1", n)
+        out.append((text, x, round(y + 1.7 + (0.9 if int(n) % 2 == 0 else 0.0), 3), 0.8))
+    for n, text in DEBUG_LABELS.items():
+        x, y = _pad_xy(circuit, placement, "TP1", n)
+        out.append((text, round(x + 1.6, 3), y, 0.8))
+    out.append(("BOOT", placement.at["SW1"][0], round(placement.at["SW1"][1] + 4.2, 3), 0.8))
+    out.append(("DISPLAY", placement.at["J8"][0], round(placement.at["J8"][1] + 4.6, 3), 0.8))
+    out += [("Katooni", W / 2, 30.0, 3.0, "B.SilkS"), (CREDIT, W / 2, 34.0, 1.2, "B.SilkS"),
+            (TITLE, W / 2, 36.5, 1.2, "B.SilkS")]
+    return out
+
+
+def fab_notes():
+    """(text entries, user rectangles) on Dwgs.User: the antenna keep-out, drawn and labelled."""
+    x0, y0, x1, y1 = ANTENNA_KEEPOUT
+    return [("ANTENNA KEEP-OUT: NO COPPER, ALL LAYERS", MOD_X, -1.5, 0.8, "Dwgs.User")], \
+        [(x0, y0, x1, y1, "Dwgs.User")]
+
+
+def pins_h():
+    """The firmware header: GPIOs, I2C addresses and which expander pin each test line is on."""
+    lines = ["/* Generated by hardware/board/build.py from board/katooni_board.py: do not edit. */",
+             "#pragma once", "", "/* GPIOs */"]
+    for name, gpio in GPIO.items():
+        lines.append(f"#define KT_PIN_{name} {gpio}")
+    lines += ["", "/* I2C bus 0: the expanders; bus 1: FUSB302 and INA226s (7-bit addresses) */"]
+    for ref, addr in EXP_ADDR.items():
+        lines.append(f"#define KT_EXP_{ref} 0x{addr:02X}")
+    lines.append(f"#define KT_FUSB302 0x{FUSB_ADDR:02X}")
+    for ref, name in (("U5", "CURRENT"), ("U6", "VBUS_DROP"), ("U7", "GND_DROP")):
+        lines.append(f"#define KT_INA226_{name} 0x{INA_ADDR[ref]:02X}")
+    lines += ["#define KT_SHUNT_MILLIOHM 100", "",
+              "/* Test lines: expander index (0 = U10 at 0x20 ... 4 = U14 at 0x24) and pin (0-7 GPA0-7,",
+              "   8-15 GPB0-7). The X macro lists them in expander order. */",
+              "#define KT_LINES(X) \\"]
+    order = sorted(LINES.items(), key=lambda kv: (kv[1][0], kv[1][1][2], int(kv[1][1][3])))
+    for k, (net, (ref, pin)) in enumerate(order):
+        idx = int(ref[1:]) - 10
+        bit = int(pin[3]) + (8 if pin[2] == "B" else 0)
+        end = " \\" if k < len(order) - 1 else ""
+        lines.append(f"    X({net}, {idx}, {bit}){end}")
+    lines.append(f"#define KT_LINE_COUNT {len(LINES)}")
+    return "\n".join(lines) + "\n"

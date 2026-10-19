@@ -35,7 +35,7 @@ def _layers(layers):
 def _padstack(pad, copper):
     """(name, text) for one pad. Pad rotation is folded into the shape (90/270 swaps w and h)."""
     w, h = (pad.h, pad.w) if round(pad.rot) % 180 == 90 else (pad.w, pad.h)
-    tht = pad.kind == "thru_hole"
+    tht = pad.kind in ("thru_hole", "np_thru_hole")     # a non-plated hole blocks every layer too
     on = copper if tht else ["F.Cu"]
     shape = pad.shape
     if shape == "circle":
@@ -63,8 +63,9 @@ def _pin_ids(pads):
     13 'GND' thermal and corner pads) get '_2', '_3', ... after the first."""
     seen, out = {}, []
     for pad in pads:
-        k = seen[pad.number] = seen.get(pad.number, 0) + 1
-        out.append(pad.number if k == 1 else f"{pad.number}_{k}")
+        number = pad.number or "NP"          # unnumbered: a non-plated locating hole
+        k = seen[number] = seen.get(number, 0) + 1
+        out.append(number if k == 1 else f"{number}_{k}")
     return out
 
 
