@@ -53,3 +53,30 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# Planning
+PLAN.md
+
+# ESP-IDF
+embedded/build/
+embedded/sdkconfig
+embedded/sdkconfig.old
+embedded/managed_components/
+
+# Host test build
+build/
+build-*/
+
+# Python (board generator)
+.venv/
+__pycache__/
+.pytest_cache/
+hardware/board/out/
+*.step
+
+# Coverage
+coverage/
+lcov.info
+
+# macOS
+.DS_Store
