@@ -22,7 +22,9 @@ def route(circuit, placement, workdir, passes=100, layers=4, log="/tmp/claude-50
               fixed_tracks=fixed_tracks, via_keepouts=via_keepouts, layer_keepouts=layer_keepouts,
               skip_nets=skip_nets, planes=planes, **({"power_nets": power_nets} if power_nets else {}))
     with open(log, "w") as f:
-        subprocess.run(["java", "-Djava.awt.headless=true", "-jar", str(FREEROUTING),
+        # Capped and niced: uncapped, a Katooni route grew past 3.5 GB, and several at once swamped
+        # the Mac (20 Oct 2026). Run one route at a time.
+        subprocess.run(["nice", "-n", "15", "java", "-Xmx1g", "-Djava.awt.headless=true", "-jar", str(FREEROUTING),
                         "-de", str(dsn), "-do", str(ses), "-mp", str(passes)],
                        check=True, stdout=f, stderr=subprocess.STDOUT)
     if not ses.exists():

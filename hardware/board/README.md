@@ -47,7 +47,8 @@ footprint and symbol, so only one is fetched.
   layouts, so `build.py --variant K` nudges the small resistors and capacitors by up to ±0.3 mm
   (seeded, never into an overlap). `board/katooni_board.py` `VARIANT` records the one that routed
   completely. To search again after a change, run a few at once with separate outputs:
-  `for v in 1 2 3 4; do .venv/bin/python build.py --route --variant $v --out v$v & done`.
+  one at a time (`.venv/bin/python build.py --route --variant K --out vK`): never in parallel, as each
+  Freerouting can grow to gigabytes (`route.py` caps it at 1 GB and runs it under `nice`).
 - **Hand-edited footprints:** the RJ45's second shield pad is `SH2`, the USB-A's second shell pad
   `10b` and the micro-B's other shell pads `0b`–`0d`, so that only one shell pad per connector is on
   the shield line (the metal joins the rest). Re-running `fetch_parts.sh` with those parts missing

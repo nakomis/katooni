@@ -410,7 +410,7 @@ def _at():
 # left one or two different connections open. VARIANT nudges the small resistors and capacitors by
 # up to +-0.3 mm (seeded, never into an overlap), and build.py --variant K searches; this is the one
 # that routed completely.
-VARIANT = 0
+VARIANT = 13
 
 
 def place_katooni(circuit, variant=None):
