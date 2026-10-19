@@ -6,7 +6,9 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
 
 # ESP32-S3-MINI-1-N8: 8 MB flash.
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
-CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# Two OTA slots plus the prov partition (KATOO-10).
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
 # The house USB connector carries the S3's native USB: console and flashing go over USB Serial/JTAG.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
@@ -17,3 +19,20 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
 CONFIG_LWIP_LOCAL_HOSTNAME="katooni"
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
+
+# OTA through Fleet (KATOO-10, as tinycrypt's CRYPT-14): a new image that fails its self-test, or
+# crashes before passing it, is rolled back by the bootloader. Every app image is signed (RSA-3072, the
+# secure boot v2 scheme) outside the build (sign.sh), and an update must be signed by the key that
+# signed the running app. Without secure boot this protects updates, not a USB cable.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+# Signed by sign.sh after the build, with the key from the Keychain, never by the build itself.
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=n
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+
+# RAM: no PSRAM on the MINI-1-N8, and MQTT's TLS session plus the download's both need room.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y

@@ -22,6 +22,7 @@ static esp_timer_handle_t s_retry;
 static int s_fails;
 static bool s_ap_on, s_have_ip;
 static char s_ip[16];
+static char s_ssid[33], s_pass[65];
 
 static void start_ap(void)
 {
@@ -39,7 +40,7 @@ static void start_ap(void)
         strlcpy((char *)ap.ap.password, CONFIG_KATOONI_AP_PASSWORD, sizeof ap.ap.password);
         ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
     }
-    wifi_mode_t mode = strlen(CONFIG_KATOONI_WIFI_SSID) ? WIFI_MODE_APSTA : WIFI_MODE_AP;
+    wifi_mode_t mode = s_ssid[0] ? WIFI_MODE_APSTA : WIFI_MODE_AP;
     esp_wifi_set_mode(mode);
     esp_wifi_set_config(WIFI_IF_AP, &ap);
     s_ap_on = true;
@@ -64,12 +65,15 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         snprintf(s_ip, sizeof s_ip, IPSTR, IP2STR(&e->ip_info.ip));
         s_have_ip = true;
         s_fails = 0;
-        ESP_LOGI(TAG, "joined %s as %s", CONFIG_KATOONI_WIFI_SSID, s_ip);
+        ESP_LOGI(TAG, "joined %s as %s", s_ssid, s_ip);
     }
 }
 
-esp_err_t net_start(void)
+esp_err_t net_start(const char *ssid, const char *password)
 {
+    /* The prov partition's network if there is one, else sdkconfig.secrets' (development builds). */
+    strlcpy(s_ssid, ssid && ssid[0] ? ssid : CONFIG_KATOONI_WIFI_SSID, sizeof s_ssid);
+    strlcpy(s_pass, ssid && ssid[0] ? password : CONFIG_KATOONI_WIFI_PASSWORD, sizeof s_pass);
     ESP_RETURN_ON_ERROR(esp_netif_init(), TAG, "netif");
     esp_err_t err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) return err;
@@ -84,14 +88,14 @@ esp_err_t net_start(void)
     esp_timer_create_args_t t = {.callback = retry, .name = "wifi-retry"};
     ESP_RETURN_ON_ERROR(esp_timer_create(&t, &s_retry), TAG, "timer");
 
-    if (strlen(CONFIG_KATOONI_WIFI_SSID)) {
+    if (s_ssid[0]) {
         wifi_config_t sta = {0};
-        strlcpy((char *)sta.sta.ssid, CONFIG_KATOONI_WIFI_SSID, sizeof sta.sta.ssid);
-        strlcpy((char *)sta.sta.password, CONFIG_KATOONI_WIFI_PASSWORD, sizeof sta.sta.password);
+        strlcpy((char *)sta.sta.ssid, s_ssid, sizeof sta.sta.ssid);
+        strlcpy((char *)sta.sta.password, s_pass, sizeof sta.sta.password);
         esp_wifi_set_mode(WIFI_MODE_STA);
         esp_wifi_set_config(WIFI_IF_STA, &sta);
     } else {
-        ESP_LOGW(TAG, "no network configured (sdkconfig.secrets): access point only");
+        ESP_LOGW(TAG, "no network configured (prov partition or sdkconfig.secrets): access point only");
         start_ap();
     }
     ESP_RETURN_ON_ERROR(esp_wifi_start(), TAG, "start");
@@ -107,5 +111,5 @@ void net_where(char *buf, size_t n)
 {
     if (s_have_ip) snprintf(buf, n, "http://%s.local (%s)", CONFIG_KATOONI_HOSTNAME, s_ip);
     else if (s_ap_on) snprintf(buf, n, "Wi-Fi \"katooni\", then http://192.168.4.1");
-    else snprintf(buf, n, "joining %s...", CONFIG_KATOONI_WIFI_SSID);
+    else snprintf(buf, n, "joining %s...", s_ssid);
 }

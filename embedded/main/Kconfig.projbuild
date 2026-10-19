@@ -48,6 +48,26 @@ menu "Katooni"
             WPA2 password for the "katooni" access point Katooni runs when it can't join the
             network: 8 or more characters, or empty for an open network.
 
+    config KATOONI_FLEET
+        bool "Take firmware updates from Fleet (MQTT to AWS IoT Core)"
+        default y
+        help
+            Needs the prov partition from infra/scripts/provision-device.sh (Wi-Fi, IoT certificate).
+            Without it Katooni runs as before, just without updates.
+
+    config KATOONI_OTA_FAIL_SELFTEST
+        bool "TEST ONLY: fail the post-update self-test, to check rollback"
+        default n
+        help
+            An image built with this fails its self-test after an update, so the bootloader rolls
+            back to the previous one, which reports "rolled back" to Fleet. Never publish one for
+            real use (publish-ota.sh refuses unless asked to test rollback).
+
+    config KATOONI_OTA_DOWNLOAD_DEADLINE_S
+        int "Longest an update's download may take (seconds)"
+        default 300
+        range 10 900
+
     config KATOONI_HOSTNAME
         string "mDNS host name"
         default "katooni"
