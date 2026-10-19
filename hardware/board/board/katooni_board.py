@@ -513,3 +513,19 @@ def pins_h():
         lines.append(f"    X({net}, {idx}, {bit}){end}")
     lines.append(f"#define KT_LINE_COUNT {len(LINES)}")
     return "\n".join(lines) + "\n"
+
+
+
+def pad_extra():
+    """Per-pad additions, as tinycrypt's: U1's nine 1.2 mm centre GND pads get a -0.18 mm paste
+    margin (Espressif warns that a full thermal pad lifts the module) and its corner GND pads join
+    the pour solidly; so does the FUSB302's exposed pad, which has no room for a fanout via."""
+    from board.sexpr import Sym
+
+    def u1(pad):
+        if pad.number == "GND" and abs(pad.w - 1.2) < 1e-6:
+            return [[Sym("solder_paste_margin"), -0.18]]
+        if pad.number == "GND" and abs(pad.w - 0.8) < 1e-6:
+            return [[Sym("zone_connect"), 2]]
+        return []
+    return {"U1": u1, "U4": lambda pad: [[Sym("zone_connect"), 2]] if pad.number == "15" else []}

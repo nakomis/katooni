@@ -36,6 +36,8 @@ def _padstack(pad, copper):
     """(name, text) for one pad. Pad rotation is folded into the shape (90/270 swaps w and h)."""
     w, h = (pad.h, pad.w) if round(pad.rot) % 180 == 90 else (pad.w, pad.h)
     tht = pad.kind in ("thru_hole", "np_thru_hole")     # a non-plated hole blocks every layer too
+    if pad.kind == "np_thru_hole":       # KiCad wants 0.25 mm from a hole, not 0.15 mm from copper
+        w, h = w + 0.2, h + 0.2
     on = copper if tht else ["F.Cu"]
     shape = pad.shape
     if shape == "circle":

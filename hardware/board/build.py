@@ -13,6 +13,7 @@ from pathlib import Path
 from board import katooni_board as kb
 from board.cleanup import prune
 from board.fab import export_step, fab, write_bom, write_cpl
+from board.gnd import gnd_fanout, stitch_vias
 from board.kicad_pcb import write_board
 from board.netlist import check
 from board.route import route
@@ -24,7 +25,8 @@ KICAD_CLI = "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli"
 # colour; this only makes the KiCad renders match the order.
 MASK, SILK = "Black", "White"
 LAYERS = 4
-PLANES = [("GND", "In1.Cu")]          # In2.Cu is a third signal layer
+PLANES = [("GND", "In1.Cu")]          # the router's view: In2.Cu is a third signal layer
+POURS = PLANES + [("GND", "F.Cu"), ("GND", "B.Cu")]    # KiCad's: GND pours on the outer layers too
 BOARDS = {"main": "katooni-main"}
 
 
@@ -73,17 +75,25 @@ def main():
     clash = kb.overlaps(p)
     if clash:
         raise SystemExit(f"placement overlaps: {clash}")
-    tracks, vias = [], []
+    # GND is never routed: every SMD GND pad gets its own via into the In1.Cu plane first.
+    fan_t, fan_v, misses = gnd_fanout(c, p, keepouts=[kb.ANTENNA_KEEPOUT])
+    print(f"GND fanout: {len(fan_v)} vias; no room beside {misses or 'none'}")
+    tracks, vias = list(fan_t), list(fan_v)
     if a.route:
         routed_tracks, routed = route(c, p, tmp, passes=a.passes, layers=LAYERS, route_area=kb.route_area(),
-                                      planes=PLANES, power_nets=kb.POWER_NETS,
+                                      planes=PLANES, power_nets=kb.POWER_NETS, skip_nets=("GND",),
+                                      fixed_tracks=fan_t, fixed_vias=fan_v,
                                       log="/tmp/claude-501/katooni-board-route.log")
-        tracks, vias = prune(c, p, routed_tracks, routed)
+        tracks, vias = prune(c, p, fan_t + routed_tracks, fan_v + routed, keep=fan_v)
+        stitch = stitch_vias(c, p, tracks, vias, keepouts=[kb.ANTENNA_KEEPOUT])
+        print(f"stitching: {len(stitch)} GND vias")
+        vias += stitch
     board = out / f"{stem}.kicad_pcb"
     notes, rects = kb.fab_notes()
     write_board(c, p, board, tracks, vias, layers=LAYERS, silk=kb.silk(c, p) + notes,
-                mask=MASK, silkscreen=SILK, keepouts=kb.keepouts(), user_rects=rects, planes=PLANES,
-                hide_refs=set(c.instances))          # too dense for designators; the BOM and CPL carry them
+                mask=MASK, silkscreen=SILK, keepouts=kb.keepouts(), user_rects=rects, planes=POURS,
+                hide_refs=set(c.instances),          # too dense for designators; the BOM and CPL carry them
+                pad_extra=kb.pad_extra())
     (out / "pins.h").write_text(kb.pins_h())
     bad, warn = drc(board, out)
     kinds = {}
