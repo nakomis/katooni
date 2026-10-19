@@ -1,6 +1,6 @@
 """Katooni main board (KATOO-1): an ESP32-S3-MINI-1 cable tester. Two clusters of test ports along
 the front edge (A end: USB-C, USB-A 3.0, RJ45; B end: USB-C, micro-B, RJ45); every conductor of
-every port runs through a series resistor to its own MCP23017 pin, so the firmware can drive one
+every port runs through a series resistor to its own TCA9555 pin, so the firmware can drive one
 line and read the rest. See DESIGN.md for the parts, the circuit and the reasoning.
 
 Board frame (KiCad, y down): x 0..W, y 0..H. The module's antenna sits on the y = 0 edge (the
@@ -16,12 +16,12 @@ W, H = 100.0, 70.0
 # pins on other variants), as tinycrypt does.
 GPIO = {"BOOT": 0, "SDA0": 1, "SCL0": 2, "SDA1": 4, "SCL1": 5, "FUSB_INT": 6, "LCD_BL": 7,
         "LCD_RST": 8, "LCD_DC": 9, "LCD_CS": 10, "LCD_MOSI": 11, "LCD_SCK": 12, "BUZZER": 13,
-        "LOAD_EN": 14, "AGND_EN": 15, "BSHORT_EN": 16, "EXP_RST": 17, "USB_DM": 19, "USB_DP": 20,
+        "LOAD_EN": 14, "AGND_EN": 15, "BSHORT_EN": 16, "USB_DM": 19, "USB_DP": 20,
         "UART_TX": 43, "UART_RX": 44}
 _MODPIN = {43: "TXD0", 44: "RXD0"}
 
 # I2C addresses (7-bit). Bus 0 holds the five expanders; bus 1 the FUSB302 (fixed at 0x22, which
-# is inside the MCP23017 range, hence two buses) and the three INA226s.
+# is inside the TCA9555 range, hence two buses) and the three INA226s.
 EXP_ADDR = {"U10": 0x20, "U11": 0x21, "U12": 0x22, "U13": 0x23, "U14": 0x24}
 INA_ADDR = {"U5": 0x40, "U6": 0x41, "U7": 0x44}     # current, VBUS drop, GND drop
 FUSB_ADDR = 0x22
@@ -47,7 +47,9 @@ def _lines():
     b1 = [f"B_C_{k}" for k in USBC_SIGNALS]
     b2 = ["B_VBUS", "B_GND", "B_C_SH"] + [f"B_M_{k}" for k in MICROB_SIGNALS] + ["B_M_SH"] + \
          [f"B_E{n}" for n in range(1, 9)] + ["B_E_SH"]
-    pins = [f"GPA{n}" for n in range(8)] + [f"GPB{n}" for n in range(8)]
+    # TCA9555, not MCP23017: on current MCP23017 datasheets GPA7/GPB7 are output-only, and every
+    # line must be read as well as driven. All sixteen TCA9555 pins are bidirectional.
+    pins = [f"P0{n}" for n in range(8)] + [f"P1{n}" for n in range(8)]
     out = {}
     for ref, nets in (("U10", a1), ("U11", a2), ("U12", a3), ("U13", b1), ("U14", b2)):
         assert len(nets) <= 16, ref
@@ -60,9 +62,9 @@ LINES = _lines()
 
 
 def series_ref(net):
-    """R100-R115 for U10's lines, R120-R135 for U11's, ... in pin order (GPA0-7, GPB0-7)."""
+    """R100-R115 for U10's lines, R120-R135 for U11's, ... in pin order (P00-P07, P10-P17)."""
     ref, pin = LINES[net]
-    slot = int(pin[3]) + (8 if pin[2] == "B" else 0)
+    slot = 8 * int(pin[1]) + int(pin[2])
     return f"R{100 + 20 * (int(ref[1:]) - 10) + slot}"
 
 
@@ -153,28 +155,27 @@ def build_katooni():
     for pad, net in DEBUG_PINS.items():
         c.connect(net, (tp, pad))
     for name in ("SDA0", "SCL0", "SDA1", "SCL1", "FUSB_INT", "LCD_BL", "LCD_RST", "LCD_DC", "LCD_CS",
-                 "LCD_MOSI", "LCD_SCK", "BUZZER", "LOAD_EN", "AGND_EN", "BSHORT_EN", "EXP_RST"):
+                 "LCD_MOSI", "LCD_SCK", "BUZZER", "LOAD_EN", "AGND_EN", "BSHORT_EN"):
         c.connect(name, (u1, modpin(GPIO[name])))
     for ref, net in (("R4", "SDA0"), ("R5", "SCL0"), ("R6", "SDA1"), ("R7", "SCL1")):
         _res(c, "R4K7", net, v33, ref)
 
-    # --- Expanders (bus 0): address straps, shared reset, decoupling, a series resistor per line.
+    # --- Expanders (bus 0): address straps, decoupling, a series resistor per line. INT is unused
+    # (the firmware polls), and the TCA9555 has no reset pin.
     for ref, addr in EXP_ADDR.items():
         u = c.add("EXP", ref)
-        c.connect(v33, (u, "VDD"))
-        c.connect(gnd, (u, "VSS"))
+        c.connect(v33, (u, "VCC"))
+        c.connect(gnd, (u, "GND"))
         c.connect("SDA0", (u, "SDA"))
-        c.connect("SCL0", (u, "SCK"))
-        c.connect("EXP_RST", (u, "~{RESET}"))
+        c.connect("SCL0", (u, "SCL"))
         for k, pin in enumerate(("A0", "A1", "A2")):
             c.connect(v33 if (addr >> k) & 1 else gnd, (u, pin))
         _cap(c, "C100N", v33, "C1" + ref[2])
-    _res(c, "R10K", "EXP_RST", v33, "R8")
     for net, (ref, pin) in LINES.items():
         _res(c, SERIES[net], net, f"X_{net}", series_ref(net))
         c.connect(f"X_{net}", (c.instances[ref], pin))
-    # Force nets carry the INA226 inputs (~10 uA bias each), so they get firm pull-ups: a weak
-    # internal 100k one could be pulled below the expander's VIH and read as connected.
+    # Force nets carry the INA226 inputs (~10 uA bias each), so they get firm pull-ups: the
+    # expander's weak internal 100k one could be pulled below its VIH and read as connected.
     for k, net in enumerate(("A_VBUS", "A_GND", "B_VBUS", "B_GND")):
         _res(c, "R10K", net, v33, f"R{9 + k}")
 
@@ -189,7 +190,10 @@ def build_katooni():
             for pad in USBC_SENSE[kind]:
                 c.connect(f"{end}_{kind}_S", (jc, kind, pad))
             _res(c, "R10R", f"{end}_{kind}", f"{end}_{kind}_S", TIE_REFS[f"{end}_{kind}"])   # sense follows force with no plug
-        c.connect(f"{end}_C_SH", (jc, "SHELL"))
+        # One shell pad carries the line: the metal shell joins the rest, so routing between them
+        # would only crowd the receptacle. (The other footprints' extra shell pads are renumbered
+        # in footprints/lcsc.pretty for the same reason: RJ45 SH2, USB-A 10b, micro-B 0b-0d.)
+        c.connect(f"{end}_C_SH", (jc, "SHELL", "3"))
         je = c.add("RJ45", "J4" if end == "A" else "J7")
         for n in range(1, 9):
             c.connect(f"{end}_E{n}", (je, str(n)))
@@ -356,7 +360,6 @@ def _at():
         "R2": m(9.1, -5.15, 0), "C6": m(9.1, -3.45, 180), "TP1": m(9.4, 3.25, 0),
         "SW1": (34.0, 14.5, 90),
         "R4": (38.4, 16.0, 0), "R5": (38.4, 17.2, 0), "R6": (38.4, 18.4, 0), "R7": (38.4, 19.6, 0),
-        "R8": (47.0, 23.0, 0),
         # power in, back left: J1 opens across the y = 0 edge
         "J1": (12.0, 3.21, 180), "R1": (17.6, 5.0, 90),
         "F1": (5.5, 10.0, 90), "D1": (5.5, 16.0, 90), "U3": (12.0, 11.0, 0),
@@ -368,18 +371,23 @@ def _at():
         "BZ1": (92.0, 18.0, 0), "Q7": (84.5, 17.0, 90), "D2": (84.5, 21.5, 90), "R26": (81.5, 17.0, 90),
         # mounting holes
         "H1": (3.0, 3.0, 0), "H2": (97.0, 3.0, 0), "H3": (3.0, 50.5, 0), "H4": (97.0, 50.5, 0),
-        # The analog block, between the expanders' resistor rows and the USB-C ports, in three rows.
-        # Row 1: A-end pull-ups, the FUSB302 and its decoupling, the load switch, the 20R.
-        "R9": (34.0, 49.5, 90), "R10": (35.2, 49.5, 90), "C15": (36.4, 49.5, 90), "U4": (38.9, 49.5, 0),
-        "C16": (41.4, 49.5, 90), "C17": (43.0, 49.5, 90), "R17": (44.5, 49.5, 90),
-        "Q1": (47.5, 49.5, 0), "R18": (50.0, 49.5, 90), "Q2": (52.5, 49.5, 0), "R19": (55.0, 49.5, 90),
-        "R20": (60.5, 49.5, 0), "Q4": (66.5, 50.0, 0), "R11": (69.0, 48.5, 90), "R12": (70.2, 48.5, 90),
-        # Row 2: the shunt, the current and VBUS-drop INA226s, the other half of the B-end short.
-        "R21": (42.5, 54.2, 0), "U5": (50.0, 54.5, 90), "C18": (54.0, 54.5, 90),
-        "U6": (58.5, 54.0, 90), "C19": (62.5, 54.0, 90), "Q5": (66.5, 54.5, 0), "R23": (69.0, 52.5, 90),
-        # Row 3: the A-end return switch, the A-end sense ties, the GND-drop INA226, the B-end ties.
-        "Q3": (40.0, 58.3, 0), "R22": (42.5, 58.3, 90), "R13": (44.0, 58.3, 90), "R14": (45.2, 58.3, 90),
-        "U7": (49.5, 58.5, 90), "C20": (53.4, 58.5, 90), "R15": (56.0, 59.5, 90), "R16": (57.2, 59.5, 90),
+        # The analog block, in the band between the module and the expanders, so that the 68 test
+        # lines have the space between the resistor rows and the ports to themselves. Kelvin sensing
+        # doesn't mind long traces, and the FUSB302's CC signalling is slow.
+        # Left of the module: A-end pull-ups and ties, the FUSB302, the load switch and its driver.
+        "R9": (20.0, 24.0, 90), "R10": (21.2, 24.0, 90), "R13": (20.0, 27.5, 90), "R14": (21.2, 27.5, 90),
+        "C15": (23.4, 24.0, 90), "U4": (26.0, 24.0, 0), "C16": (28.6, 24.0, 90), "C17": (30.2, 24.0, 90),
+        "R17": (26.0, 27.2, 0),
+        "Q1": (35.5, 24.0, 0), "R18": (38.5, 24.0, 90), "Q2": (41.0, 25.5, 0), "R19": (41.0, 28.5, 0),
+        # Below the module: the A-end return switch and the B-end short.
+        "Q3": (47.0, 24.5, 0), "R22": (47.0, 27.5, 0), "Q4": (53.0, 24.5, 0), "Q5": (53.0, 28.0, 0),
+        "R23": (50.0, 28.5, 90),
+        # Right of the module: the 20R and the shunt, then the INA226s.
+        "R20": (62.5, 24.6, 0), "R21": (62.5, 28.8, 0),
+        "U5": (70.5, 24.2, 90), "C18": (74.5, 24.2, 90), "U6": (70.5, 28.4, 90), "C19": (74.5, 28.4, 90),
+        "U7": (79.0, 26.3, 90), "C20": (83.0, 26.3, 90),
+        # B-end pull-ups and ties, between the B-end expanders.
+        "R11": (65.5, 33.0, 90), "R12": (66.7, 33.0, 90), "R15": (67.9, 33.0, 90), "R16": (69.1, 33.0, 90),
     }
     for ref, cx in EXP_X.items():
         at[ref] = (cx, EXP_Y, 90)
@@ -459,7 +467,7 @@ def silk(circuit, placement):
         out.append((text, x, 51.0, 1.0))
     ax = (PORT_X["J4"] + PORT_X["J2"]) / 2
     bx = (PORT_X["J5"] + PORT_X["J7"]) / 2
-    out += [("A", round(ax, 3), 27.5, 2.5), ("B", round(bx, 3), 27.5, 2.5)]
+    out += [("A", round(ax - 7.0, 3), 51.4, 2.0), ("B", round(bx + 3.0, 3), 51.4, 2.0)]
     for n, text in J1_LABELS.items():
         x, y = _pad_xy(circuit, placement, "J1", n)
         out.append((text, x, round(y + 1.7 + (0.9 if int(n) % 2 == 0 else 0.0), 3), 0.8))
@@ -493,13 +501,14 @@ def pins_h():
     for ref, name in (("U5", "CURRENT"), ("U6", "VBUS_DROP"), ("U7", "GND_DROP")):
         lines.append(f"#define KT_INA226_{name} 0x{INA_ADDR[ref]:02X}")
     lines += ["#define KT_SHUNT_MILLIOHM 100", "",
-              "/* Test lines: expander index (0 = U10 at 0x20 ... 4 = U14 at 0x24) and pin (0-7 GPA0-7,",
-              "   8-15 GPB0-7). The X macro lists them in expander order. */",
+              "/* Test lines: expander (TCA9555) index (0 = U10 at 0x20 ... 4 = U14 at 0x24) and bit",
+              "   (0-7 = P00-P07, port 0; 8-15 = P10-P17, port 1). The X macro lists them in expander",
+              "   order. */",
               "#define KT_LINES(X) \\"]
-    order = sorted(LINES.items(), key=lambda kv: (kv[1][0], kv[1][1][2], int(kv[1][1][3])))
+    order = sorted(LINES.items(), key=lambda kv: (kv[1][0], kv[1][1]))
     for k, (net, (ref, pin)) in enumerate(order):
         idx = int(ref[1:]) - 10
-        bit = int(pin[3]) + (8 if pin[2] == "B" else 0)
+        bit = 8 * int(pin[1]) + int(pin[2])
         end = " \\" if k < len(order) - 1 else ""
         lines.append(f"    X({net}, {idx}, {bit}){end}")
     lines.append(f"#define KT_LINE_COUNT {len(LINES)}")
