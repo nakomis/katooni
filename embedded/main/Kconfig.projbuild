@@ -1,0 +1,25 @@
+menu "Katooni"
+
+    config KATOONI_WIFI_SSID
+        string "Wi-Fi network to join"
+        default ""
+        help
+            Set in sdkconfig.secrets, never in a committed file. Empty: run the fallback access
+            point only.
+
+    config KATOONI_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    config KATOONI_AP_PASSWORD
+        string "Fallback access point password"
+        default ""
+        help
+            WPA2 password for the "katooni" access point Katooni runs when it can't join the
+            network: 8 or more characters, or empty for an open network.
+
+    config KATOONI_HOSTNAME
+        string "mDNS host name"
+        default "katooni"
+
+endmenu

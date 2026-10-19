@@ -80,3 +80,7 @@ lcov.info
 
 # macOS
 .DS_Store
+
+# Device secrets: Wi-Fi credentials, and (Fleet) the device certificate and key
+embedded/sdkconfig.secrets
+embedded/certs/

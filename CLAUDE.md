@@ -16,7 +16,9 @@ firmware approach. Read it before starting any work item.
 | `docs/architecture/` | draw.io diagrams; SVGs are generated on commit |
 | `docs/logo-candidates/` | Logo candidates |
 | `embedded/core/` | Portable C core: classification, e-marker decoding, resistance, bagging; Mac tests |
-| `embedded/` | ESP-IDF 5.5 firmware (to come) |
+| `embedded/main/` | ESP-IDF 5.5 firmware: drivers, the plug-and-go loop, Wi-Fi |
+| `embedded/components/katooni_core/` | The core as an ESP-IDF component (same sources) |
+| `embedded/tools/make_assets.py` | Regenerates the splash image and screen fonts in `embedded/main/assets/` |
 | `hardware/board/` | Code-generated PCB for JLCPCB assembly (to come) |
 | `hardware/case/` | Onshape FeatureScript case (to come) |
 
@@ -48,6 +50,22 @@ embedded/core/coverage.sh          # the same with clang coverage, plus a per-fi
   the classifier against its own tables.
 - **No e-marker reply in the tests is captured from a real cable yet.** Add real captures to
   `tests/test_emarker.c` once the board runs.
+
+### Firmware
+
+```bash
+embedded/build.sh                 # idf.py build (ESP-IDF 5.5 at ~/esp/v5.5/esp-idf)
+embedded/build.sh flash monitor   # anything else is passed to idf.py
+```
+
+- **Pins are placeholders.** `embedded/main/board_pins.h` holds the pin map until KATOO-1's
+  generated `pins.h` replaces it (every value is marked TODO).
+- **Wi-Fi:** credentials go in `embedded/sdkconfig.secrets` (gitignored; copy
+  `sdkconfig.secrets.example`). Without them Katooni runs an open "katooni" access point.
+- **Screen assets** are generated and committed, so a build doesn't need Pillow:
+  `python3 embedded/tools/make_assets.py --font <SourceCodePro-Bold.ttf>`. The fonts are rendered
+  from Source Code Pro (OFL); don't swap in a font that isn't openly licensed.
+- **Nothing in `embedded/main/` has run on hardware yet.** It compiles with no warnings.
 
 ### Core conventions
 
