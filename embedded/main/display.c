@@ -14,6 +14,7 @@
 #include "esp_lcd_panel_st7789.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "sdkconfig.h"
 
 #define W 240
 #define H 320
@@ -71,15 +72,26 @@ static void fill(int x, int y, int w, int h, uint16_t c)
     for (int row = y; row < y + h; row += lines) blit(x, row, w, row + lines > y + h ? y + h - row : lines);
 }
 
+/* Some modules (the GMT020-02) have no backlight pin: theirs is always on. */
+static void backlight(bool on)
+{
+    const int pin = KAT_PIN_LCD_BL;
+    if (pin < 0) return;
+    if (!on) {
+        /* & 63: the compiler still sees the shift for a -1 pin, though it's never reached. */
+        gpio_config_t c = {.pin_bit_mask = 1ULL << (pin & 63), .mode = GPIO_MODE_OUTPUT};
+        gpio_config(&c);
+    }
+    gpio_set_level((gpio_num_t)pin, on);
+}
+
 esp_err_t display_init(void)
 {
     s_done = xSemaphoreCreateBinary();
     s_buf = heap_caps_malloc(BUF_PIXELS * sizeof(uint16_t), MALLOC_CAP_DMA);
     ESP_RETURN_ON_FALSE(s_done && s_buf, ESP_ERR_NO_MEM, TAG, "no memory");
 
-    gpio_config_t bl = {.pin_bit_mask = 1ULL << KAT_PIN_LCD_BL, .mode = GPIO_MODE_OUTPUT};
-    gpio_config(&bl);
-    gpio_set_level(KAT_PIN_LCD_BL, 0);
+    backlight(false);
 
     spi_bus_config_t bus = {
         .mosi_io_num = KAT_PIN_LCD_MOSI,
@@ -110,10 +122,12 @@ esp_err_t display_init(void)
     ESP_RETURN_ON_ERROR(esp_lcd_new_panel_st7789(io, &p, &s_panel), TAG, "panel");
     esp_lcd_panel_reset(s_panel);
     esp_lcd_panel_init(s_panel);
-    esp_lcd_panel_invert_color(s_panel, true);   /* IPS ST7789 panels want inversion on */
+    /* ST7789V panels vary: most IPS ones want inversion on, and some sit at an offset in the RAM. */
+    esp_lcd_panel_invert_color(s_panel, CONFIG_KATOONI_LCD_INVERT);
+    esp_lcd_panel_set_gap(s_panel, CONFIG_KATOONI_LCD_X_GAP, CONFIG_KATOONI_LCD_Y_GAP);
     esp_lcd_panel_disp_on_off(s_panel, true);
     fill(0, 0, W, H, BLACK);
-    gpio_set_level(KAT_PIN_LCD_BL, 1);
+    backlight(true);
     return ESP_OK;
 }
 

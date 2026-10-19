@@ -58,6 +58,11 @@ embedded/build.sh                 # idf.py build (ESP-IDF 5.5 at ~/esp/v5.5/esp-
 embedded/build.sh flash monitor   # anything else is passed to idf.py
 ```
 
+- **Two pin profiles** (Kconfig "Pin profile"): the PCB, and a breadboard prototype on an
+  ESP32-S3-DevKitC with an Estardyn GMT020-02 display (2.0" ST7789V; no backlight pin, no MISO).
+  `embedded/build.sh --breadboard` builds the latter in `build-breadboard/` from
+  `sdkconfig.breadboard`. Display inversion and row/column offsets are Kconfig options, since
+  ST7789V panels vary.
 - **Pins are placeholders.** `embedded/main/board_pins.h` holds the pin map until KATOO-1's
   generated `pins.h` replaces it (every value is marked TODO).
 - **Wi-Fi:** credentials go in `embedded/sdkconfig.secrets` (gitignored; copy
