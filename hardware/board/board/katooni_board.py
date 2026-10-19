@@ -28,13 +28,15 @@ FUSB_ADDR = 0x22
 
 # USB-C receptacle pads, by function (the cable's view): CC, D+/D- on both rows (a plug only
 # touches one row's pair, so the pair it lands on tells the orientation), SBU, the four SuperSpeed
-# pairs. VBUS and GND are split by row: the A row carries the test current (force) and the B row
-# senses (Kelvin); the plug's own contacts join them.
+# pairs. VBUS and GND are split for Kelvin sensing: one A-row pad of each carries the test current
+# (force), one B-row pad senses. The plug joins all four VBUS (and all four GND) contacts inside
+# itself, so the other pads are left unconnected rather than routed together on the board: that
+# freed the congested area behind the receptacle (0.24 A is far inside one contact's rating).
 USBC_SIGNALS = {"CC1": "A5", "CC2": "B5", "DP1": "A6", "DN1": "A7", "DP2": "B6", "DN2": "B7",
                 "SBU1": "A8", "SBU2": "B8", "TX1P": "A2", "TX1N": "A3", "RX1P": "B11", "RX1N": "B10",
                 "TX2P": "B2", "TX2N": "B3", "RX2P": "A11", "RX2N": "A10"}
-USBC_FORCE = {"VBUS": ("A4", "A9"), "GND": ("A1", "A12")}
-USBC_SENSE = {"VBUS": ("B4", "B9"), "GND": ("B1", "B12")}
+USBC_FORCE = {"VBUS": ("A4",), "GND": ("A1",)}
+USBC_SENSE = {"VBUS": ("B9",), "GND": ("B1",)}
 USBA_SIGNALS = {"DN": "2", "DP": "3", "SSRXN": "5", "SSRXP": "6", "GD": "7", "SSTXN": "8", "SSTXP": "9"}
 MICROB_SIGNALS = {"DN": "D-", "DP": "D+", "ID": "ID"}
 
@@ -88,8 +90,10 @@ DEBUG_LABELS = {"1": "EN", "2": "RX", "3": "TX", "4": "G", "5": "3V3"}
 FPC_PINS = {"1": "GND", "2": "LCD_CS", "3": "LCD_DC", "4": "LCD_SCK", "5": "LCD_MOSI", "6": "LCD_RST",
             "8": "+3V3", "9": "+3V3", "10": "LED_A", "11": "LED_K", "12": "GND"}
 
-POWER_NETS = ("VBUS_RAW", "VBUS", "+3V3", "GND", "LOAD_HI", "LOAD_SH", "A_VBUS", "A_GND", "B_VBUS",
-              "B_GND", "B_MID")
+# Routed 0.3 mm wide. The test-current path (LOAD_*, A_/B_VBUS, A_/B_GND, B_MID) carries only
+# 0.24 A, which 0.15 mm handles, and Kelvin sensing makes its trace resistance irrelevant; at 0.3 mm
+# those many-pin nets left the router a dozen connections short.
+POWER_NETS = ("VBUS_RAW", "VBUS", "+3V3", "GND")
 
 
 def _cap(c, key, net, ref, gnd="GND"):
@@ -324,7 +328,7 @@ FRONT = H + 0.3
 MOD_X, MOD_Y = 50.0, 12.8          # the module's origin; its antenna strip ends on the y = 0 edge
 EXP_Y = 36.0                       # expander row
 EXP_X = {"U10": 15.0, "U12": 29.0, "U11": 43.5, "U13": 56.5, "U14": 82.0}
-PORT_X = {"J4": 10.5, "J3": 29.5, "J2": 43.5, "J5": 56.5, "J6": 68.0, "J7": 89.0}
+PORT_X = {"J4": 10.5, "J3": 29.5, "J2": 43.5, "J5": 58.0, "J6": 68.5, "J7": 89.0}
 
 
 def _ports():
@@ -358,7 +362,7 @@ def _at():
         "U1": (MOD_X, MOD_Y, 0),
         "C5": m(-9.0, -4.75, 90), "C4": m(-9.0, -2.1, 270), "R3": m(-9.0, 0.55, 90),
         "R2": m(9.1, -5.15, 0), "C6": m(9.1, -3.45, 180), "TP1": m(9.4, 3.25, 0),
-        "SW1": (34.0, 14.5, 90),
+        "SW1": (35.0, 9.0, 90),
         "R4": (38.4, 16.0, 0), "R5": (38.4, 17.2, 0), "R6": (38.4, 18.4, 0), "R7": (38.4, 19.6, 0),
         # power in, back left: J1 opens across the y = 0 edge
         "J1": (12.0, 3.21, 180), "R1": (17.6, 5.0, 90),
@@ -371,21 +375,24 @@ def _at():
         "BZ1": (92.0, 18.0, 0), "Q7": (84.5, 17.0, 90), "D2": (84.5, 21.5, 90), "R26": (81.5, 17.0, 90),
         # mounting holes
         "H1": (3.0, 3.0, 0), "H2": (97.0, 3.0, 0), "H3": (3.0, 50.5, 0), "H4": (97.0, 50.5, 0),
-        # The analog block, in the band between the module and the expanders, so that the 68 test
-        # lines have the space between the resistor rows and the ports to themselves. Kelvin sensing
-        # doesn't mind long traces, and the FUSB302's CC signalling is slow.
-        # Left of the module: A-end pull-ups and ties, the FUSB302, the load switch and its driver.
+        # The analog block sits behind the expanders, so that the 68 test lines have the space between
+        # the resistor rows and the ports to themselves. Everything on I2C bus 1 (FUSB302, INA226s)
+        # is left of or below the module, near its GPIO4/5. Kelvin sensing doesn't mind long traces,
+        # and the FUSB302's CC signalling is slow.
+        # Top left, by the power entry: the 20R and the shunt, with the current INA226 right beside the
+        # shunt so that its inputs tap the shunt's own pads.
+        "R20": (26.5, 6.0, 90), "R21": (26.5, 15.0, 90), "U5": (30.0, 15.0, 0), "C18": (30.0, 10.6, 0),
+        # Left band: A-end pull-ups and ties, the FUSB302, the load switch and its driver, the A-end
+        # return switch.
         "R9": (20.0, 24.0, 90), "R10": (21.2, 24.0, 90), "R13": (20.0, 27.5, 90), "R14": (21.2, 27.5, 90),
         "C15": (23.4, 24.0, 90), "U4": (26.0, 24.0, 0), "C16": (28.6, 24.0, 90), "C17": (30.2, 24.0, 90),
         "R17": (26.0, 27.2, 0),
         "Q1": (35.5, 24.0, 0), "R18": (38.5, 24.0, 90), "Q2": (41.0, 25.5, 0), "R19": (41.0, 28.5, 0),
-        # Below the module: the A-end return switch and the B-end short.
-        "Q3": (47.0, 24.5, 0), "R22": (47.0, 27.5, 0), "Q4": (53.0, 24.5, 0), "Q5": (53.0, 28.0, 0),
-        "R23": (50.0, 28.5, 90),
-        # Right of the module: the 20R and the shunt, then the INA226s.
-        "R20": (62.5, 24.6, 0), "R21": (62.5, 28.8, 0),
-        "U5": (70.5, 24.2, 90), "C18": (74.5, 24.2, 90), "U6": (70.5, 28.4, 90), "C19": (74.5, 28.4, 90),
-        "U7": (79.0, 26.3, 90), "C20": (83.0, 26.3, 90),
+        "Q3": (31.0, 28.3, 0), "R22": (34.5, 28.5, 0),
+        # Below the module: the two drop INA226s.
+        "U6": (46.8, 24.0, 90), "C19": (46.8, 27.0, 0), "U7": (53.6, 24.0, 90), "C20": (53.6, 27.0, 0),
+        # Right band: the B-end short.
+        "Q4": (61.0, 24.5, 0), "Q5": (61.0, 28.0, 0), "R23": (64.0, 26.2, 90),
         # B-end pull-ups and ties, between the B-end expanders.
         "R11": (65.5, 33.0, 90), "R12": (66.7, 33.0, 90), "R15": (67.9, 33.0, 90), "R16": (69.1, 33.0, 90),
     }

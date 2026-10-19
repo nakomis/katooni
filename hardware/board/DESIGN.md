@@ -100,10 +100,12 @@ The test current runs `VBUS` → Q1 (AO3401A, switched by Q2 from `LOAD_EN`) →
 - **U6** (0x41) measures `A_VBUS_S − B_VBUS_S`: the drop along the cable's VBUS conductor.
 - **U7** (0x44) measures `B_GND_S − A_GND_S`: the drop along its GND conductor.
 
-**Kelvin by receptacle row.** On each USB-C receptacle the A-row VBUS/GND pins (A4/A9, A1/A12)
-carry the current and the B-row pins (B4/B9, B1/B12) are the sense nets. A plug joins all four
-VBUS contacts (and all four GND) inside itself, so the sense rows read the voltage at the plug's
-contacts, with no current in them. With no USB-C plug in (USB-A or micro-B cables), a 10 Ω resistor
+**Kelvin by receptacle row.** On each USB-C receptacle one A-row pin per rail carries the current
+(A4 VBUS, A1 GND) and one B-row pin senses (B9 VBUS, B1 GND). A plug joins all four VBUS contacts
+(and all four GND) inside itself, so the sense pins read the voltage at the plug's contacts, with no
+current in them. The remaining VBUS/GND pins (A9, A12, B4, B12) are deliberately unconnected:
+routing them together on the board crowded the area behind the receptacle until the router failed,
+and 0.24 A is far inside one contact's rating. With no USB-C plug in (USB-A or micro-B cables), a 10 Ω resistor
 from each sense net to its force net makes the sense follow the force; at 10 µA of INA226 bias
 that's 0.1 mV of error, and with a USB-C plug in, the 10 Ω carries a negligible share.
 
