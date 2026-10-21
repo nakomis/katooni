@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Validate the post-merge state on PRs, not just the branch tip.
+env:
+  CHECKOUT_REF: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+
+jobs:
+  core:
+    name: Core tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: Build and test the portable core (gcc)
+        run: |
+          cmake -S embedded/core -B build/core -DCMAKE_C_COMPILER=gcc
+          cmake --build build/core
+          ctest --test-dir build/core --output-on-failure
+      - name: Build and test the portable core (clang)
+        run: |
+          cmake -S embedded/core -B build/core-clang -DCMAKE_C_COMPILER=clang
+          cmake --build build/core-clang
+          ctest --test-dir build/core-clang --output-on-failure
+
+  firmware:
+    name: Firmware build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+      - name: idf.py build (ESP-IDF 5.5, ESP32-S3)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5
+          target: esp32s3
+          path: embedded

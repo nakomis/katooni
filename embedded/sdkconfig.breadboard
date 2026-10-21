@@ -1,0 +1,3 @@
+# Breadboard prototype: ESP32-S3-DevKitC (8 MB flash or more) + Estardyn GMT020-02 display.
+# Used by `embedded/build.sh --breadboard`, layered on sdkconfig.defaults.
+CONFIG_KATOONI_BOARD_BREADBOARD=y

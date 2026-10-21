@@ -1,0 +1,19 @@
+CONFIG_IDF_TARGET="esp32s3"
+
+# 160 MHz: the work is light, and it sidesteps the S3's marginal core voltage at 240 MHz under heavy
+# dual-core load (see ~/CLAUDE.md).
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160=y
+
+# ESP32-S3-MINI-1-N8: 8 MB flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# The house USB connector carries the S3's native USB: console and flashing go over USB Serial/JTAG.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# 1 ms ticks, so short waits in the drivers aren't rounded to nothing.
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+CONFIG_LWIP_LOCAL_HOSTNAME="katooni"
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024

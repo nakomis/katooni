@@ -1,0 +1,55 @@
+menu "Katooni"
+
+    choice KATOONI_BOARD
+        prompt "Pin profile"
+        default KATOONI_BOARD_PCB
+        help
+            Which pin map board_pins.h uses: the Katooni PCB (KATOO-1), or a breadboard prototype
+            on an ESP32-S3 dev board with a GMT020-02 display module.
+
+        config KATOONI_BOARD_PCB
+            bool "Katooni PCB"
+        config KATOONI_BOARD_BREADBOARD
+            bool "Breadboard (ESP32-S3-DevKitC + GMT020-02)"
+    endchoice
+
+    config KATOONI_LCD_INVERT
+        bool "Invert display colours (INVON)"
+        default y
+        help
+            Most ST7789V IPS panels need inversion on for correct colours. Turn it off if black
+            comes out white.
+
+    config KATOONI_LCD_X_GAP
+        int "Display column offset"
+        default 0
+        help
+            Pixels between the controller's RAM and the panel's first column; 0 for 240x320 panels.
+
+    config KATOONI_LCD_Y_GAP
+        int "Display row offset"
+        default 0
+
+    config KATOONI_WIFI_SSID
+        string "Wi-Fi network to join"
+        default ""
+        help
+            Set in sdkconfig.secrets, never in a committed file. Empty: run the fallback access
+            point only.
+
+    config KATOONI_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    config KATOONI_AP_PASSWORD
+        string "Fallback access point password"
+        default ""
+        help
+            WPA2 password for the "katooni" access point Katooni runs when it can't join the
+            network: 8 or more characters, or empty for an open network.
+
+    config KATOONI_HOSTNAME
+        string "mDNS host name"
+        default "katooni"
+
+endmenu
