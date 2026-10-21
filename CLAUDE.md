@@ -16,7 +16,9 @@ firmware approach. Read it before starting any work item.
 | `docs/architecture/` | draw.io diagrams; SVGs are generated on commit |
 | `docs/logo-candidates/` | Logo candidates |
 | `embedded/core/` | Portable C core: classification, e-marker decoding, resistance, bagging; Mac tests |
-| `embedded/main/` | ESP-IDF 5.5 firmware: drivers, the plug-and-go loop, Wi-Fi |
+| `embedded/main/` | ESP-IDF 5.5 firmware: drivers, the plug-and-go loop, Wi-Fi, web server |
+| `embedded/main/web/index.html` | The session web page (served by the device and by the simulator) |
+| `embedded/sim/` | Mac simulator: core + web page + JSON API with canned cables, and its API tests |
 | `embedded/components/katooni_core/` | The core as an ESP-IDF component (same sources) |
 | `embedded/tools/make_assets.py` | Regenerates the splash image and screen fonts in `embedded/main/assets/` |
 | `infra/` | CDK: each Katooni as an IoT Thing for Fleet (`KatooniDeviceStack`); signing and provisioning scripts |
@@ -43,7 +45,16 @@ Coverage must stay at 70% or above; it was 98.8% of lines when the core landed.
 ```bash
 cmake -S embedded/core -B build/core && cmake --build build/core && ctest --test-dir build/core
 embedded/core/coverage.sh          # the same with clang coverage, plus a per-file report
+cmake -S embedded/sim -B build/sim && cmake --build build/sim && ctest --test-dir build/sim   # core + simulator
+build/sim/katooni-sim --demo       # the web page on http://127.0.0.1:8080/ with a drawer of canned cables
 ```
+
+- **The web page's JSON comes from the core** (`json.c`), streamed to a sink: the firmware sends
+  it in 1 KB chunks from a snapshot taken under the state lock, and the simulator serves the very
+  same bytes. `embedded/sim/test_sim.py` drives the simulator over HTTP and parses the JSON for
+  real. Add a canned cable to `sim.c` for any new case the page should show.
+- **The page** is one file with no build step and no browser dialogs (New session needs two taps).
+  Red means faulty, so the bag palette has no red (a test checks).
 
 - Each `tests/test_*.c` is its own program using the macros in `tests/check.h`.
 - `simcable.c` makes synthetic scans and e-marker replies for the tests and the Mac simulator. The

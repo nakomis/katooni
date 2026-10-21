@@ -3,6 +3,6 @@
 set(core ${COMPONENT_DIR}/../../core)
 idf_component_register(
   SRCS ${core}/src/lines.c ${core}/src/scan.c ${core}/src/classify.c ${core}/src/emarker.c
-       ${core}/src/resistance.c ${core}/src/cable.c ${core}/src/session.c ${core}/src/simcable.c
+       ${core}/src/resistance.c ${core}/src/cable.c ${core}/src/session.c ${core}/src/simcable.c ${core}/src/json.c
   INCLUDE_DIRS ${core}/include
 )

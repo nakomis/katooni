@@ -76,10 +76,10 @@ void kat_bag_letter(int index, char out[4])
     }
 }
 
-/* Twelve colours that stay apart on a TFT and for most colour-blind eyes; the letter is always shown
- * too, because colours repeat after twelve bags. */
+/* Twelve colours that stay apart on a TFT; the letter is always shown too, because colours repeat
+ * after twelve bags. No red: red means faulty, on the screen and the web page. */
 static const kat_colour_t PALETTE[KAT_PALETTE_SIZE] = {
-    {"blue", 0x1F77B4}, {"orange", 0xFF7F0E}, {"green", 0x2CA02C}, {"red", 0xD62728},
+    {"blue", 0x1F77B4}, {"orange", 0xFF7F0E}, {"green", 0x2CA02C}, {"teal", 0x00796B},
     {"purple", 0x9467BD}, {"brown", 0x8C564B}, {"pink", 0xE377C2}, {"grey", 0x7F7F7F},
     {"olive", 0xBCBD22}, {"cyan", 0x17BECF}, {"navy", 0x1A2A6C}, {"yellow", 0xFFD700},
 };
