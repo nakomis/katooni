@@ -1,0 +1,12 @@
+# Name,   Type, SubType,  Offset,   Size
+# KATOO-10, from tinycrypt's (CRYPT-14): nvs and phy at IDF's single-app offsets; prov holds this
+# Katooni's Wi-Fi and IoT credentials (infra/scripts/provision-device.sh), so every Katooni runs the
+# same image and a published one holds no secrets. Two 3 MB app slots for OTA with rollback, and a
+# coredump; the table fits the MINI-1-N8's 8 MB.
+nvs,      data, nvs,      0x9000,   0x6000
+phy_init, data, phy,      0xf000,   0x1000
+otadata,  data, ota,      0x10000,  0x2000
+prov,     data, nvs,      0x12000,  0x6000
+ota_0,    app,  ota_0,    0x20000,  3M
+ota_1,    app,  ota_1,    0x320000, 3M
+coredump, data, coredump, 0x620000, 64K

@@ -87,3 +87,7 @@ lcov.info
 embedded/sdkconfig.secrets
 embedded/certs/
 embedded/.cache/
+
+# Node / CDK
+node_modules/
+cdk.out/

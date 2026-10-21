@@ -1,0 +1,11 @@
+# pnpm settings for the infra package (single package, not a real workspace).
+
+# pnpm doesn't run dependency build scripts unless allowed here. Both are Jest 30 internals that ship
+# prebuilt native binaries as optional dependencies; their install scripts are only a fallback build,
+# so they stay off (as in nakostat).
+allowBuilds:
+  '@parcel/watcher': false
+  unrs-resolver: false
+
+# Refuse versions published in the last 24 h, a defence against freshly compromised releases.
+minimumReleaseAge: 1440

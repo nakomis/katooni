@@ -19,6 +19,7 @@ firmware approach. Read it before starting any work item.
 | `embedded/main/` | ESP-IDF 5.5 firmware: drivers, the plug-and-go loop, Wi-Fi |
 | `embedded/components/katooni_core/` | The core as an ESP-IDF component (same sources) |
 | `embedded/tools/make_assets.py` | Regenerates the splash image and screen fonts in `embedded/main/assets/` |
+| `infra/` | CDK: each Katooni as an IoT Thing for Fleet (`KatooniDeviceStack`); signing and provisioning scripts |
 | `hardware/board/` | Code-generated PCB for JLCPCB assembly (to come) |
 | `hardware/case/` | Onshape FeatureScript case (to come) |
 
@@ -76,6 +77,49 @@ embedded/build.sh flash monitor   # anything else is passed to idf.py
   `python3 embedded/tools/make_assets.py --font <SourceCodePro-Bold.ttf>`. The fonts are rendered
   from Source Code Pro (OFL); don't swap in a font that isn't openly licensed.
 - **Nothing in `embedded/main/` has run on hardware yet.** It compiles with no warnings.
+
+### Fleet OTA (KATOO-10)
+
+Copied from tinycrypt's CRYPT-14, without the watch approval: **Fleet only triggers an update, and
+Katooni is the trust anchor.**
+
+- **Protocol:** commands on `katooni/<thing>/commands`, answers on `katooni/<thing>/responses`.
+- **Checks before installing:** the image is downloaded into the spare slot, then refused unless
+  - its SHA-256 matches Fleet's,
+  - `esp_ota_end` passes (signed by the key that signed the **running** image),
+  - it says `katooni` at that version, and
+  - it isn't a downgrade.
+- **Probation:** a new image must pass `selftest()` (NVS, and the core classifying a known cable)
+  and reach IoT Core within 120 s, or it's rolled back.
+- **Back-off:** limits as tinycrypt's (deadline, minimum rate, back-off after a failure). A
+  repeated URL is ignored with no reply.
+- **Signing:** every image is signed (RSA-3072, secure boot v2 scheme, no secure boot).
+  - `build.sh` builds, then `sign.sh` signs with the Keychain's `katooni-ota-signing/{env}`.
+  - The master copy is in SSM `/katooni/{env}/ota/signing-key`.
+  - The public half is committed: `embedded/ota-signing/{env}.pub.pem`. The sandbox key's digest is
+    `75663e02…`.
+  - **Replacing the key strands every Katooni in the field.** Never `idf.py flash`: it writes an
+    unsigned image. Use `flash.sh <port> [thing]`.
+- **Per-device settings** live in the `prov` NVS partition, never in the image:
+  - contents: Wi-Fi from SSM `/Nakomis/Wifi/*`, endpoint, Thing, certificate and key
+  - written by `infra/scripts/provision-device.sh unit-N` into `embedded/certs/<thing>/`
+    (gitignored)
+  - `sdkconfig.secrets` is the development fallback, and `publish-ota.sh` refuses a build that
+    has it.
+- **Devices are IoT Things** from `KatooniDeviceStack` (`infra/`). They're listed per environment
+  in `infra/devices.json`: a device left out of a deploy has its Thing deleted.
+  - Attributes: `project=katooni`, `deviceType=cable-tester`, `capabilities=ota,ota-signed`. That's
+    how Fleet finds them, and it makes Fleet offer signed builds only.
+  - Policy: connect only as itself, its own topics only.
+- **Publishing (by hand):**
+  1. Bump `embedded/version.txt` and commit.
+  2. Run `embedded/publish-ota.sh x.y.z`. It uploads to `s3://nakomis-firmware-{env}/katooni/`, and
+     the first upload is what makes `katooni` appear as a Fleet project.
+  3. Update the device from Fleet's UI.
+
+  CI publishing, like tinycrypt's CRYPT-20, isn't set up yet.
+- **Infra:** `cd infra && pnpm test`, `pnpm run deploy-sandbox`. Prod is wired up but has no
+  devices, and deploys only with Martin's OK.
 
 ### Core conventions
 
