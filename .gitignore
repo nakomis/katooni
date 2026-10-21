@@ -72,6 +72,8 @@ build-*/
 __pycache__/
 .pytest_cache/
 hardware/board/out/
+hardware/board/freerouting/
+hardware/board/footprints/lcsc.3dshapes/
 *.step
 
 # Coverage
