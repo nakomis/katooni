@@ -1,8 +1,9 @@
 /* Katooni's pin maps: the PCB (PLACEHOLDER VALUES) and the breadboard prototype.
  *
- * TODO(KATOO-1): the board generator (hardware/board/build.py) writes the real pins.h. Replace every
- * PCB value marked TODO from it once the board is routed, keeping these names (or rename here and
- * in the drivers together). Nothing in the PCB profile has been checked against a schematic.
+ * TODO: the routed board's real pins are in board_pcb_pins.h, a copy of hardware/board/build.py's
+ * out/main/pins.h (KT_ names). The PCB profile below doesn't use it yet: the board has two I²C buses,
+ * five TCA9555s and three INA226s, which the drivers don't handle yet. Until then, nothing in the
+ * PCB profile matches the board.
  *
  * What the firmware assumes about the circuit:
  * - One I²C bus: the line expanders, the FUSB302B (fixed at 0x22, so no expander may use 0x22) and

@@ -16,8 +16,8 @@ get their own label.
 
 ## Goals (v1)
 
-1. **Continuity map.** USB-C ↔ USB-C, USB-A ↔ USB-C, and RJ45 ↔ RJ45, plugged into an A end and a
-   B end. Find opens, shorts and swapped conductors.
+1. **Continuity map.** USB-C ↔ USB-C, USB-A ↔ USB-C, USB-C/USB-A ↔ micro-B and RJ45 ↔ RJ45,
+   plugged into an A end (USB-C, USB-A 3.0, RJ45) and a B end (USB-C, micro-B, RJ45). Find opens, shorts and swapped conductors.
    - USB: classify as power-only, USB 2, full-featured (SuperSpeed/USB4 lanes present) or miswired.
      The conductors are VBUS, GND, CC, VCONN, D+/D−, four SuperSpeed pairs, SBU1/2 and the shield.
    - RJ45: straight vs crossover, reversed pairs, 4-wire leads (100 Mb max), and STP vs UTP
@@ -26,7 +26,7 @@ get their own label.
    VDO: maximum VBUS voltage (20/30/40/50 V), current (3/5 A), USB speed (USB 2 to USB4 Gen4),
    active or passive, vendor ID, and the latency field (a rough length). No e-marker means
    "3 A / 20 V (60 W) by spec".
-3. **Resistance check (lie detector).** Drive about 1 A round the VBUS/GND loop and measure the
+3. **Resistance check (lie detector).** Drive about 0.25 A round the VBUS/GND loop and measure the
    drop with a Kelvin (4-wire) connection at the far end. This gives the actual loop resistance
    and a rough estimate of the conductor gauge. Flag any cable whose e-marker claims more than its
    copper can carry.
@@ -43,19 +43,26 @@ get their own label.
 5. **Plug and go.** No buttons in the normal flow. Katooni notices a cable arriving, tests it in
    about 2 s, beeps, and shows the bag on the screen: a big letter on a panel in that bag's colour, so
    you can sort by colour across the room, plus the reason and a small conductor map.
-6. **Session web page,** served by the S3 over Wi-Fi. It shows:
+6. **Session web page,** served by the S3 over Wi-Fi at `katooni.local`. It shows:
    - each bag, with its full spec and count
    - one-cable bags, flagged "label this one individually"
    - the details of the last cable (pin map, e-marker dump, resistance), so you can see *why* it
      landed where it did
    - label text ready to type into the Dymo app, e.g. `C–C 240W 40G 1.0m`
+   - a "new session" control (there are no physical buttons apart from BOOT)
+
+   Wi-Fi is only for this page and OTA updates. Credentials live in a gitignored secrets file, as
+   tinycrypt's do; if the home network isn't reachable, Katooni falls back to its own access point.
+   The session (bags, counts, fingerprints) is kept in NVS, so a power blip doesn't lose it.
+7. **Bag colours:** a fixed palette of 12 distinct colours. The bag letter is always shown, so
+   colours may repeat after 12 bags.
 
 ## Phase II (not v1)
 
 - Print labels straight to Martin's Bluetooth Dymo (plastic tape) over BLE. Martin intends to
   reverse-engineer the Dymo protocol himself; check GitHub for prior work first.
 - Per-cable IDs and history, plus "is this cable #17?" by matching fingerprints.
-- More connectors: micro-B, maybe others.
+- More connectors (micro-B is already in v1, at the B end).
 - One-end-only RJ45 length estimate from pair capacitance (about 50 pF/m).
 
 ## Non-goals
@@ -82,21 +89,28 @@ prototype.** The board needs about 67 drive/sense lines (one per conductor per p
 roughly 550–650 joints and 70–80 wires on protoboard. Hand assembly is limited to the house USB
 cable and the case.
 
+- **Decided with Martin (19 Oct 2026):** all ports on **one edge**, the A cluster on the left and
+  the B cluster on the right, so you plug both ends in from the front; **micro-B at the B end**;
+  **shielded RJ45 jacks** at both ends (STP vs UTP); a **4-layer** board; a box of about
+  100 × 70 × 25 mm.
 - **ESP32-S3-MINI-1** with ESP-IDF 5.5. Power and flashing through the house USB connector
   (JST SH 1.0 5-pin; see CLAUDE.md in `~/` and tinycrypt `hardware/key-board/README.md`). That
-  gives 5 V at 1 A max, enough for a brief 1 A load test.
+  gives 5 V at 1 A max, shared between the board and the load test.
 - **I²C GPIO expanders** drive every conductor at the A end in turn and read every conductor at
   the B end, through series protection resistors.
-- **FUSB302B** USB PD PHY for SOP' messaging, plus a VCONN switch.
-- **INA226** for the Kelvin resistance measurement, plus a switched constant-current load.
+- **FUSB302B** USB PD PHY for SOP' messaging. Its built-in VCONN switches power the cable's e-marker.
+- **INA226** for the Kelvin resistance measurement, plus a switched load of about 0.25 A. (The
+  sketch said 0.5 A, then 1 A; 0.25 A is Claude's call when designing the board: the INA226's
+  ±81.92 mV input then covers up to ~330 mΩ per conductor, enough for a long thin cable, at
+  10 µΩ resolution, and it leaves the 1 A budget comfortable.) `hardware/board/DESIGN.md` has the
+  circuit.
 - **2.0" IPS colour TFT, ST7789, 240×320** (decided by Martin, 19 Oct 2026, after seeing the logo at
   240 px; about £3–4 bare from LCSC). SPI, with the ribbon in a JLC-soldered ZIF FPC connector, so
   no hand-soldering, and a transistor for the backlight. It shows the Katooni logo as a boot splash.
 - A buzzer.
 - **Board:** generated by code, as tinycrypt's `key-board` is: Python `build.py` → KiCad → DRC →
   JLCPCB BOM, CPL and gerbers, assembled by JLCPCB.
-- **Case:** Onshape FeatureScript, with the A-end and B-end port clusters on opposite sides so a
-  cable loops round.
+- **Case:** Onshape FeatureScript, with both port clusters along the front edge.
 - **240 MHz voltage caution** (see `~/CLAUDE.md`): the work here is light, so 160 MHz is fine.
 
 ## Firmware *(Claude's call)*
